@@ -38,6 +38,9 @@ def _pick_port() -> int:
 
 
 class LlamaRuntime:
+    # 后端标识，InferenceBackend 契约要求
+    name = "llama_cpp"
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self.proc: asyncio.subprocess.Process | None = None

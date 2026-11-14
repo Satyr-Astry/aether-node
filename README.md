@@ -96,6 +96,27 @@ POST /api/providers {"action":"add","name":"my-api","endpoint":"https://api.open
 不排队是刻意的：排队会让所有请求一起变慢再一起超时，快速失败能把压力交还给调用方，
 它会去换节点或重试。
 
+## 扩展点
+
+`aether/backends/` 定义了推理后端契约（`InferenceBackend` Protocol）与注册表。
+目前只有 llama.cpp 一个实现，但接第二个后端时只需实现 Protocol 再 `register()`，
+路由、计量、隧道、GUI 都不用改。
+
+```python
+from aether import backends
+
+backends.register("my_backend", MyBackend)   # 实现 start/stop/status/base_url
+runtime = backends.get("my_backend")          # 单例，与 API 层共享
+```
+
+**这是一个「只留接口、不重构」的决定**：`LlamaRuntime` 早就存在，硬拆成多层只会
+在只有一个实现时增加抽象成本。真正该拆的时机是有第二个后端时——那时才知道边界
+划在哪里合适。引入 Protocol 立刻抓到一个缺口：`LlamaRuntime` 缺 `name` 属性，
+契约检查直接报了出来。
+
+自测里用一个 DummyBackend 验证了「自定义后端可插拔且满足契约」，这样接口没有
+名存实亡。
+
 ## 部署与运维
 
 ### Docker
