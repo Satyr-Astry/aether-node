@@ -27,6 +27,11 @@ def default_home() -> Path:
     env = os.environ.get("AETHER_HOME")
     if env:
         return Path(env).expanduser().resolve()
+    # 打包成 exe 后把数据放在可执行文件旁边，而不是临时解压目录
+    import sys
+
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent / "data"
     return Path(__file__).resolve().parent.parent / "data"
 
 

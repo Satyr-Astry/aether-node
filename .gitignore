@@ -25,6 +25,10 @@ __pycache__/
 .ext-test/
 *.log
 
+# 构建产物
+build/
+dist/
+
 # 编辑器与系统
 .vscode/
 .idea/

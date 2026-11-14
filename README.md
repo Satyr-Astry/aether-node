@@ -131,6 +131,28 @@ docker compose up
 容器里 `AETHER_SHARE=1` 会强制开启共享并自动生成 `api_key`——从 `docker logs` 里取。
 **本机没有安装 Docker，镜像未实际构建过**，Dockerfile 是照标准写的。
 
+### 打包成可发布目录
+
+```powershell
+pwsh -File build.ps1
+```
+
+产物在 `dist/AetherNode/`，96 个文件约 30MB，双击 `AetherNode.exe` 即可运行。
+`build.ps1` 会在构建后自动做冒烟测试：起服务、探 `/healthz`、确认静态界面返回 200。
+
+**实测结果**：构建通过，`/healthz` 返回 true，界面 HTTP 200。数据目录默认在 exe 旁边的
+`data/`，与源码运行时的行为一致。
+
+打包踩过一个坑值得记下来：uvicorn 用字符串 `"aether.api.app:app"` 导入应用，
+PyInstaller 的静态分析看不到这条路径，第一次构建出来的 exe 启动即报
+`No module named 'aether.api'`。修法是让 spec 显式 `collect_submodules("aether")`。
+同理 uvicorn 自己的动态导入（`loops.auto`、`protocols.http.auto`、`lifespan.on`）
+也要手工列进 hiddenimports。
+
+**没做的**：Inno Setup 安装程序、代码签名、自动更新检查。没有签名证书的话安装包会被
+SmartScreen 警告，这属于分发层面的问题，不影响程序功能。也**没有在干净机器上验证过
+「装完能不能用」**——本机能跑通只证明打包流程正确，不证明目标机器不缺运行库。
+
 ### 探针与指标
 
 | 端点 | 用途 |

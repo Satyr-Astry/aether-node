@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,7 +19,19 @@ from aether.events import bus
 from aether.llama_server import runtime
 from aether.p2p.relay_server import relay as memory_relay
 
-GUI_DIR = Path(__file__).resolve().parent.parent / "gui"
+
+def _gui_dir() -> Path:
+    """PyInstaller 打包后静态资源在 _MEIPASS 下，源码运行时在包目录旁。"""
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        bundled = base / "aether" / "gui"
+        if bundled.exists():
+            return bundled
+        return Path(sys.executable).parent / "aether" / "gui"
+    return Path(__file__).resolve().parent.parent / "gui"
+
+
+GUI_DIR = _gui_dir()
 
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
