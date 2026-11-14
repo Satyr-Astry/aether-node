@@ -278,3 +278,89 @@ async def metrics() -> PlainTextResponse:
              [("aether_audit_total", audit.get(verdict, 0), {"verdict": verdict})])
 
     return PlainTextResponse("\n".join(lines) + "\n")
+
+# ---------------- 身份备份与恢复 ----------------
+
+@router.get("/identity/info")
+async def identity_info() -> dict:
+    from aether.identity import get_identity
+
+    ident = get_identity()
+    return {
+        "node_id": ident.pubkey,
+        "npub": ident.npub,
+        "evm_address": ident.evm_address,
+        "secret_storage": "identity.json（明文私钥，仅在 data 目录内）",
+        "backup_hint": "用 POST /api/identity/export 导出加密备份；丢失 identity.json 会永久失去节点身份",
+    }
+
+
+@router.post("/identity/export")
+async def identity_export(payload: dict) -> dict:
+    """用口令加密导出身份。返回的 blob 可直接存文件。"""
+    from aether import identity_vault
+    from aether.identity import get_identity
+
+    password = str((payload or {}).get("password") or "")
+    try:
+        blob = identity_vault.export_backup(get_identity(), password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"backup": blob}
+
+
+@router.post("/identity/import")
+async def identity_import(payload: dict) -> dict:
+    """从加密备份恢复身份。会覆盖现有 identity.json，需要重启生效。"""
+    from aether import identity_vault
+    from aether.config import get_settings
+    from aether.identity import get_identity
+
+    data = payload or {}
+    blob = data.get("backup") or {}
+    password = str(data.get("password") or "")
+    if not isinstance(blob, dict) or not blob:
+        raise HTTPException(status_code=400, detail="需要 backup 对象")
+    try:
+        recovered = identity_vault.decrypt_backup(blob, password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    current = get_identity()
+    settings = get_settings()
+    import json as _json
+
+    path = settings.home / "identity.json"
+    backup_of_old = path.with_suffix(".json.bak")
+    if path.exists():
+        try:
+            backup_of_old.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            pass
+    path.write_text(_json.dumps({"seckey": recovered["seckey"]}, indent=2), encoding="utf-8")
+    return {
+        "imported": True,
+        "new_node_id": recovered.get("pubkey"),
+        "previous_node_id": current.pubkey,
+        "old_backup": str(backup_of_old),
+        "restart_required": True,
+        "warning": "账本与身份绑定：恢复后历史记录仍属于旧节点，需人工核对",
+    }
+
+
+@router.post("/identity/verify")
+async def identity_verify(payload: dict) -> dict:
+    """校验一份备份能否用给定口令解开，不落盘。"""
+    from aether import identity_vault
+    from aether.identity import get_identity
+
+    data = payload or {}
+    try:
+        recovered = identity_vault.decrypt_backup(data.get("backup") or {}, str(data.get("password") or ""))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {
+        "ok": True,
+        "pubkey": recovered.get("pubkey"),
+        "matches_current": recovered.get("pubkey") == get_identity().pubkey,
+    }

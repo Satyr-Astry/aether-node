@@ -79,6 +79,13 @@ class Identity:
             return self.pubkey
 
     # ---- EVM 身份 ----
+    def export_secret(self) -> str:
+        """导出私钥十六进制，仅供加密备份使用。
+
+        不提供任何"明文落盘"的便捷入口——备份走 identity_vault 的口令加密。
+        """
+        return self._seckey.hex()
+
     @property
     def evm_address(self) -> str:
         """把节点身份直接当作 EVM 账户：同一条 secp256k1 曲线，地址是公钥的 keccak 后缀。

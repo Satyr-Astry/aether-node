@@ -96,6 +96,37 @@ POST /api/providers {"action":"add","name":"my-api","endpoint":"https://api.open
 不排队是刻意的：排队会让所有请求一起变慢再一起超时，快速失败能把压力交还给调用方，
 它会去换节点或重试。
 
+## 身份与备份
+
+`data/identity.json` 是节点的全部身份：网络 ID、账本归属、隧道地址、EVM 账户全部由它派生。
+**丢了它等于换了一个节点**，历史账本与应收应付都对不上。
+
+备份走口令加密，不提供明文导出：
+
+```powershell
+# 导出
+Invoke-RestMethod -Uri "http://127.0.0.1:8737/api/identity/export" -Method Post `
+  -ContentType "application/json" -Body '{"password":"你的口令（至少 8 位）"}'
+
+# 校验（不落盘）
+Invoke-RestMethod -Uri "http://127.0.0.1:8737/api/identity/verify" -Method Post `
+  -ContentType "application/json" -Body '{"backup":{...},"password":"..."}'
+
+# 恢复（会覆盖现有身份，旧文件另存为 identity.json.bak）
+Invoke-RestMethod -Uri "http://127.0.0.1:8737/api/identity/import" -Method Post `
+  -ContentType "application/json" -Body '{"backup":{...},"password":"..."}'
+```
+
+加密用 PBKDF2-HMAC-SHA256（20 万次迭代）+ AES-256-GCM。选 GCM 是因为它带认证标签：
+口令错了会明确失败，而不是解出一段垃圾再被当成私钥用。每次导出用新盐，同一身份两次导出的
+密文不同。
+
+测试验证了：blob 里不含明文或 base64 形式的私钥、错误口令被拒、密文篡改被拒、版本与缺字段
+被拒、往返后公钥/EVM 地址/npub 全部一致。
+
+**恢复的风险**：账本按节点 ID 索引，恢复身份后历史记录仍属于旧节点。API 会明确返回
+`previous_node_id` 与警告，但账本是否需要迁移得由人判断，程序不自动改。
+
 ## 扩展点
 
 `aether/backends/` 定义了推理后端契约（`InferenceBackend` Protocol）与注册表。
