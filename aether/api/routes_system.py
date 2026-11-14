@@ -31,6 +31,14 @@ async def health() -> dict:
 async def system_info() -> dict:
     state = get_state()
     s = get_settings()
+    models = state.library.all()
+    runtime_ready = bool(runtime.binary_path())
+    # 首次启动判定：没有模型、没配外部端点、也没标记过向导完成
+    first_run = (
+        not models
+        and not (s.external_providers or [])
+        and not s.wizard_done
+    )
     return {
         "app": APP_NAME,
         "version": __version__,
@@ -46,7 +54,24 @@ async def system_info() -> dict:
         "runtime": runtime.status(),
         "relay": memory_relay.stats(),
         "api": {"host": s.api_host, "port": s.api_port, "key_required": bool(s.api_key)},
+        "onboarding": {
+            "first_run": first_run,
+            "has_model": bool(models),
+            "has_runtime": runtime_ready,
+            "has_provider": bool(s.external_providers),
+            "share_enabled": s.share_enabled,
+            "dismissed": s.wizard_done,
+        },
     }
+
+
+@router.post("/onboarding/dismiss")
+async def dismiss_onboarding() -> dict:
+    """标记引导已完成，之后不再显示。"""
+    s = get_settings()
+    save_settings(s.model_copy(update={"wizard_done": True}))
+    bus.publish("settings.updated", {"keys": ["wizard_done"]})
+    return {"ok": True}
 
 
 @router.get("/settings")

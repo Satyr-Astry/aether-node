@@ -717,7 +717,80 @@ async function refreshSystem() {
   try {
     S.sys = await api("/api/system");
     renderNodeInfo();
+    renderOnboarding();
   } catch (err) {}
+}
+
+/* ---------------- 首次启动引导 ---------------- */
+function renderOnboarding() {
+  const panel = $("#onboarding-panel");
+  if (!panel) return;
+  const ob = (S.sys && S.sys.onboarding) || {};
+  if (!ob.first_run || ob.dismissed) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "";
+
+  const steps = [
+    {
+      title: "安装推理运行时",
+      desc: "llama.cpp 与 CUDA 运行时约 680MB，只需装一次",
+      done: !!ob.has_runtime,
+      action: () => {
+        installRuntime();
+      },
+      cta: "下载运行时",
+    },
+    {
+      title: "下载一个模型",
+      desc: "建议先从小模型试：Qwen2.5-1.5B 的 Q4_K_M 约 1GB，CPU 也能跑",
+      done: !!ob.has_model,
+      action: () => {
+        $("#hub-q").value = "qwen2.5 1.5b gguf";
+        searchHub();
+      },
+      cta: "去搜索模型",
+    },
+    {
+      title: "决定是否对外共享",
+      desc: "默认只监听本机。共享会绑定 0.0.0.0 并自动生成 api_key",
+      done: !!ob.share_enabled,
+      action: () => {
+        const btn = document.querySelector('#tabs button[data-view="settings"]');
+        if (btn) btn.click();
+      },
+      cta: "去设置",
+    },
+  ];
+
+  const box = $("#onboarding-steps");
+  box.innerHTML = "";
+  steps.forEach((step, i) => {
+    const item = el("div", "item");
+    const row = el("div", "item-row");
+    row.appendChild(el("span", "tag " + (step.done ? "green" : "amber"), step.done ? "已完成" : `第 ${i + 1} 步`));
+    row.appendChild(el("span", "item-title", step.title));
+    row.appendChild(el("span", "spacer"));
+    if (!step.done) {
+      const b = el("button", "mini primary", step.cta);
+      b.onclick = step.action;
+      row.appendChild(b);
+    }
+    item.appendChild(row);
+    item.appendChild(el("div", "item-sub", step.desc));
+    box.appendChild(item);
+  });
+}
+
+async function dismissOnboarding() {
+  try {
+    await api("/api/onboarding/dismiss", { method: "POST" });
+    if (S.sys) S.sys.onboarding.dismissed = true;
+    renderOnboarding();
+  } catch (err) {
+    toast("保存失败：" + err.message, "err");
+  }
 }
 
 /* ---------------- 账本 ---------------- */
@@ -1511,6 +1584,7 @@ async function init() {
   $("#chain-build").onclick = buildChainTx;
   $("#share-toggle").onclick = toggleShare;
   $("#provider-save").onclick = saveProvider;
+  $("#onboarding-dismiss").onclick = dismissOnboarding;
   $("#chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();

@@ -89,6 +89,9 @@ class Settings(BaseModel):
     tunnel_max_concurrency: int = 4   # 本节点同时处理的隧道请求上限
     api_max_concurrency: int = 4      # /v1 同时处理的请求上限
 
+    # ---- 首次启动 ----
+    wizard_done: bool = False
+
     # ---- 自有外部 API（纳入统一路由与计量）----
     # 每项形如：
     #   {"name": "my-openai", "endpoint": "https://api.openai.com", "api_key": "sk-...",
