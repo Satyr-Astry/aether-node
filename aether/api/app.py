@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from aether import APP_NAME, __version__
+from aether import APP_NAME, __version__, auth
 from aether.api import routes_ledger, routes_models, routes_openai, routes_p2p, routes_system
 from aether.api.state import get_state
 from aether.config import get_settings
@@ -49,20 +49,21 @@ def _presented_key(headers) -> str:
 
 
 def _guard_protected(request) -> JSONResponse | None:
-    """共享模式下，非本地访问 /api 与 /v1 必须带 api_key。
+    """共享模式下，非本地访问 /api 与 /v1 必须通过认证。
 
-    本地回环访问免鉴权：GUI 与运维脚本都在本机，强行让它们读密钥文件只是麻烦，
-    并不增加安全性——能读文件的人本来就能读 settings.json。
+    认证方式由 `auth_mode` 决定（api_key / jwt / open），这里只负责拿结果做决定。
+    未开启共享时只监听回环，外部根本连不上，不需要检查。
     """
     settings = get_settings()
     if not settings.share_enabled:
         return None
-    if _is_local(request.client.host if request.client else None):
-        return None
-    if _presented_key(request.headers) == settings.api_key:
+    provider = auth.build(settings)
+    client_host = request.client.host if request.client else None
+    result = provider.authenticate(dict(request.headers), client_host or "")
+    if result.ok:
         return None
     return JSONResponse(
-        {"detail": "共享模式下非本地访问需要 api_key（X-Api-Key 或 Bearer）"},
+        {"detail": result.reason or "未通过认证", "auth_mode": provider.name},
         status_code=401,
     )
 

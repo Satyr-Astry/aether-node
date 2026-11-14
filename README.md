@@ -96,6 +96,24 @@ POST /api/providers {"action":"add","name":"my-api","endpoint":"https://api.open
 不排队是刻意的：排队会让所有请求一起变慢再一起超时，快速失败能把压力交还给调用方，
 它会去换节点或重试。
 
+## 认证与授权
+
+`auth_mode` 决定用哪种方式校验非本地访问：
+
+| 模式 | 行为 |
+|---|---|
+| `api_key`（默认） | 静态 Bearer / `X-Api-Key`；本地回环默认免鉴权 |
+| `jwt` | HS256 JWT，校验签名与 `exp` / `nbf` / `aud`；**不信任本地** |
+| `open` | 全放行，只应在确认只监听回环时用 |
+
+JWT 是零依赖实现（标准库 hmac + base64），不引 PyJWT。刻意只支持 HS256——RS256/ES256
+需要非对称密钥管理与 JWKS 拉取，是另一个量级的工程，留作接口扩展点而不是假装支持。
+
+`auth_trust_local` 可以关掉，容器或反向代理后面应当关掉：那时本地回环不再代表"可信用户"。
+
+测试覆盖了 `alg=none` 攻击、payload 篡改、错误 audience、过期与未生效、缺密钥，
+以及未知模式回退到 api_key（不静默放行）。
+
 ## 身份与备份
 
 `data/identity.json` 是节点的全部身份：网络 ID、账本归属、隧道地址、EVM 账户全部由它派生。

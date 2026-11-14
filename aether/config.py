@@ -92,6 +92,12 @@ class Settings(BaseModel):
     # ---- 首次启动 ----
     wizard_done: bool = False
 
+    # ---- 认证 ----
+    auth_mode: str = "api_key"        # api_key | jwt | open
+    auth_trust_local: bool = True     # 本地回环是否免鉴权（api_key 模式）
+    auth_jwt_secret: str = ""         # HS256 共享密钥
+    auth_jwt_audience: str = ""
+
     # ---- 自有外部 API（纳入统一路由与计量）----
     # 每项形如：
     #   {"name": "my-openai", "endpoint": "https://api.openai.com", "api_key": "sk-...",
