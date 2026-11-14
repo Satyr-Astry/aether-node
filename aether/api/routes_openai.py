@@ -18,7 +18,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from aether import audit
+from aether import audit, auth
 from aether import receipt as receipts
 from aether.api.state import get_state
 from aether.config import get_settings
@@ -51,15 +51,19 @@ def _leave() -> None:
 
 
 def _check_key(request: Request) -> None:
-    expected = get_settings().api_key
-    if not expected:
+    """与中间件保持同一套判定。
+
+    早先这里只看"有没有配 key"，导致本地回环调用也被要求带 key——
+    而中间件的规则是"仅共享模式下的非本地访问"才校验。两套规则冲突，
+    表现为模型加载成功、推理却 401。
+    """
+    settings = get_settings()
+    if not settings.share_enabled:
         return
-    auth = request.headers.get("authorization") or ""
-    token = auth[7:].strip() if auth.lower().startswith("bearer ") else (
-        request.headers.get("x-api-key") or ""
-    )
-    if token != expected:
-        raise HTTPException(status_code=401, detail="API key 无效")
+    provider = auth.build(settings)
+    result = provider.authenticate(dict(request.headers), request.client.host if request.client else "")
+    if not result.ok:
+        raise HTTPException(status_code=401, detail=result.reason or "未通过认证")
 
 
 def _ascii_header(value) -> str:
