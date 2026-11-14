@@ -302,15 +302,32 @@ async def onchain_sign(payload: dict) -> dict:
         abi.uint(int(data.get("amount") or 0)),
     )
     try:
-        signed = get_identity().sign_evm_transaction(
+        tx_type = int(data.get("tx_type") or 0)
+        common = dict(
             nonce=int(data.get("nonce") or 0),
-            gas_price=int(data.get("gas_price") or 1_000_000_000),
             gas_limit=int(data.get("gas_limit") or 120_000),
             to=data["to"],
             value=0,
             data=calldata,
             chain_id=int(data.get("chain_id") or 1),
         )
+        ident = get_identity()
+        if tx_type == 2:
+            # EIP-1559：显式给基础费与优先费，缺省时用保守值
+            max_fee = int(data.get("max_fee") or 30_000_000_000)
+            priority = int(data.get("max_priority_fee") or 1_500_000_000)
+            signed = ident.sign_evm_transaction_1559(
+                nonce=common["nonce"], max_priority_fee=priority, max_fee=max_fee,
+                gas_limit=common["gas_limit"], to=common["to"], value=0,
+                data=calldata, chain_id=common["chain_id"],
+            )
+        else:
+            signed = ident.sign_evm_transaction(
+                nonce=common["nonce"],
+                gas_price=int(data.get("gas_price") or 1_000_000_000),
+                gas_limit=common["gas_limit"], to=common["to"], value=0,
+                data=calldata, chain_id=common["chain_id"],
+            )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"签名失败: {exc}") from exc
     signed["calldata"] = "0x" + calldata.hex()

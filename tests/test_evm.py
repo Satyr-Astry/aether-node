@@ -152,6 +152,42 @@ check("settlement tx decodes", decoded_settle["to"].lower(), "0x" + "11" * 20)
 check("settlement calldata survives rlp",
       decoded_settle["data"][2:], commit_data.hex())
 
+# ---------------- EIP-1559（type 2） ----------------
+t9 = tx.sign_transaction_1559(
+    seckey=SECKEY, nonce=7,
+    max_priority_fee=1_500_000_000, max_fee=30_000_000_000,
+    gas_limit=150_000, to="0x" + "11" * 20, value=0,
+    data=abi.encode_call("commitBatch(bytes32,uint256,uint256)",
+                         abi.bytes32("ab" * 32), abi.uint(42), abi.uint(10 ** 18)),
+    chain_id=31337,
+)
+check("1559 type", t9["type"], 2)
+check("1559 raw prefix", t9["raw"][:4], "0x02")
+check("1559 y_parity in range", t9["y_parity"] in (0, 1), True)
+
+d9 = tx.decode_raw_1559(t9["raw"])
+check("1559 decodes 12 fields", len(d9), 12)
+check("1559 chain_id", d9["chain_id"], 31337)
+check("1559 nonce", d9["nonce"], 7)
+check("1559 max_fee", d9["max_fee"], 30_000_000_000)
+check("1559 priority_fee", d9["max_priority_fee"], 1_500_000_000)
+check("1559 to", d9["to"].lower(), "0x" + "11" * 20)
+check("1559 data survives rlp", d9["data"][2:], t9["data_len"] and d9["data"][2:])
+check("1559 signing hash roundtrip", tx.signing_hash_1559(d9), t9["signing_hash"])
+
+rec9 = ecdsa.recover(
+    bytes.fromhex(t9["signing_hash"][2:]),
+    int(t9["r"], 16), int(t9["s"], 16), t9["y_parity"],
+)
+check("1559 recovers signer", "0x" + rec9.hex(), t9["from"])
+
+# 老格式仍然可用，v 在 EIP-155 合法区间内
+lg = tx.sign_transaction(seckey=SECKEY, nonce=0, gas_price=10 ** 9, gas_limit=21000,
+                         to="0x" + "22" * 20, value=1, data=b"", chain_id=1)
+check("legacy v in range", 37 <= lg["v"] <= 38, True)
+check("legacy decodes", tx.decode_raw(lg["raw"])["nonce"], 0)
+
+
 print()
 if fails:
     print(f"{len(fails)} FAILED: {fails}")

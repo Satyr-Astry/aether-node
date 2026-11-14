@@ -95,6 +95,12 @@ class Identity:
 
         return sign_transaction(seckey=self._seckey, **kwargs)
 
+    def sign_evm_transaction_1559(self, **kwargs) -> dict:
+        """用节点私钥签一笔 EIP-1559（type 2）交易。"""
+        from aether.evm.tx import sign_transaction_1559
+
+        return sign_transaction_1559(seckey=self._seckey, **kwargs)
+
     # ---- 签名 ----
     def sign_digest(self, digest32: bytes) -> bytes:
         """对 32 字节摘要直接做 Schnorr 签名（Nostr 事件用）。"""

@@ -66,6 +66,122 @@ def sign_transaction(
     }
 
 
+def sign_transaction_1559(
+    *,
+    seckey: bytes,
+    nonce: int,
+    max_priority_fee: int,
+    max_fee: int,
+    gas_limit: int,
+    to: Any = "",
+    value: int = 0,
+    data: bytes = b"",
+    chain_id: int = 1,
+    access_list: list | None = None,
+) -> dict:
+    """EIP-1559（type 2）交易。
+
+    结构：0x02 || rlp([chainId, nonce, maxPriorityFee, maxFee, gasLimit, to, value,
+    data, accessList, yParity, r, s])，签名哈希用前九个字段。
+    """
+    target = _to_bytes_addr(to)
+    al = access_list or []
+    fields: list[Any] = [
+        chain_id, nonce, max_priority_fee, max_fee, gas_limit, target, value, data, al,
+    ]
+    signing_payload = b"\x02" + rlp.encode(fields)
+    digest = keccak256(signing_payload)
+    r, s, recid = ecdsa.sign(digest, seckey)
+    y_parity = recid & 1
+
+    raw = b"\x02" + rlp.encode(fields + [y_parity, r, s])
+    return {
+        "type": 2,
+        "raw": "0x" + raw.hex(),
+        "hash": "0x" + keccak256(raw).hex(),
+        "from": "0x" + ecdsa.address(seckey).hex(),
+        "to": ("0x" + target.hex()) if target else "",
+        "nonce": nonce,
+        "max_priority_fee": max_priority_fee,
+        "max_fee": max_fee,
+        "gas_limit": gas_limit,
+        "value": value,
+        "chain_id": chain_id,
+        "y_parity": y_parity,
+        "r": hex(r),
+        "s": hex(s),
+        "data_len": len(data),
+        "signing_hash": "0x" + digest.hex(),
+    }
+
+
+def decode_raw_1559(raw_hex: str) -> dict:
+    """解析 type 2 交易，用于自检。"""
+    raw = bytes.fromhex(raw_hex[2:] if raw_hex.startswith("0x") else raw_hex)
+    if not raw or raw[0] != 0x02:
+        raise ValueError("不是 EIP-1559（type 2）交易")
+    body = raw[1:]
+
+    def _parse(buf: bytes, pos: int = 0) -> tuple[Any, int]:
+        if pos >= len(buf):
+            raise ValueError("RLP 截断")
+        first = buf[pos]
+        if first < 0x80:
+            return bytes([first]), pos + 1
+        if first < 0xB8:
+            length = first - 0x80
+            return buf[pos + 1 : pos + 1 + length], pos + 1 + length
+        if first < 0xC0:
+            lenlen = first - 0xB7
+            length = int.from_bytes(buf[pos + 1 : pos + 1 + lenlen], "big")
+            start = pos + 1 + lenlen
+            return buf[start : start + length], start + length
+        if first < 0xF8:
+            length = first - 0xC0
+            start = pos + 1
+        else:
+            lenlen = first - 0xF7
+            length = int.from_bytes(buf[pos + 1 : pos + 1 + lenlen], "big")
+            start = pos + 1 + lenlen
+        items = []
+        cursor = start
+        end = start + length
+        while cursor < end:
+            item, cursor = _parse(buf, cursor)
+            items.append(item)
+        return items, end
+
+    items, _ = _parse(body)
+    if not isinstance(items, list) or len(items) != 12:
+        raise ValueError(f"字段数应为 12，实际 {len(items)}")
+    names = [
+        "chain_id", "nonce", "max_priority_fee", "max_fee", "gas_limit", "to",
+        "value", "data", "access_list", "y_parity", "r", "s",
+    ]
+    out: dict = {}
+    for name, value in zip(names, items):
+        if isinstance(value, list):
+            out[name] = value
+        elif name in ("to", "data"):
+            out[name] = "0x" + value.hex()
+        else:
+            out[name] = int.from_bytes(value, "big") if value else 0
+    return out
+
+
+def signing_hash_1559(decoded: dict) -> str:
+    """从已解析的 type 2 交易重算签名哈希。"""
+    fields = [
+        decoded["chain_id"], decoded["nonce"], decoded["max_priority_fee"],
+        decoded["max_fee"], decoded["gas_limit"],
+        bytes.fromhex(decoded["to"][2:]) if decoded["to"] not in ("0x", "") else b"",
+        decoded["value"],
+        bytes.fromhex(decoded["data"][2:]) if decoded["data"] != "0x" else b"",
+        decoded.get("access_list") or [],
+    ]
+    return "0x" + keccak256(b"\x02" + rlp.encode(fields)).hex()
+
+
 def decode_raw(raw_hex: str) -> dict:
     """解析原始交易（仅 legacy EIP-155），用于自检。"""
     raw = bytes.fromhex(raw_hex[2:] if raw_hex.startswith("0x") else raw_hex)
