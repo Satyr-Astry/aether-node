@@ -95,14 +95,14 @@ class ModelLibrary:
             fname = rel.parts[-1]
             from aether.hub import QUANT_RE  # 延迟导入避免循环
 
-            m = QUANT_RE.search(fname)
+            quant_match = QUANT_RE.search(fname)
             model = LocalModel(
                 key=f"{repo}::{fname}",
                 repo=repo,
                 file=fname,
                 path=str(p),
                 size=p.stat().st_size,
-                quant=m.group(1).upper() if m else "?",
+                quant=quant_match.group(1).upper() if quant_match else "?",
                 meta=read_gguf_meta(p).summary(),
             )
             self._models[model.key] = model
@@ -133,14 +133,14 @@ class ModelLibrary:
     def register(self, repo: str, file: str, path: Path) -> LocalModel:
         from aether.hub import QUANT_RE
 
-        m = QUANT_RE.search(file)
+        quant_match = QUANT_RE.search(file)
         model = LocalModel(
             key=f"{repo}::{file}",
             repo=repo,
             file=file,
             path=str(path),
             size=path.stat().st_size,
-            quant=m.group(1).upper() if m else "?",
+            quant=quant_match.group(1).upper() if quant_match else "?",
             meta=read_gguf_meta(path).summary(),
         )
         self._models[model.key] = model

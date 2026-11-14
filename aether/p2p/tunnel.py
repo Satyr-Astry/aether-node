@@ -54,12 +54,14 @@ class TunnelManager:
         self.client = client
         self.local_base_url = local_base_url
         self._pending: dict[str, asyncio.Queue] = {}
-        self.stats = {
+        self.stats: dict[str, int] = {
             "forwarded_in": 0, "requests_out": 0, "served": 0, "errors": 0,
             "overloaded": 0, "bytes_sent": 0, "bytes_recv": 0, "byte_mismatch": 0,
             "duplicate_forward": 0,
         }
         self.last_error = ""
+        self.last_status = 0
+        self.last_body = ""
         self._sem: asyncio.Semaphore | None = None
         self._declared_bytes: dict[str, int] = {}
         self._denied: dict[str, int] = {}
@@ -169,8 +171,8 @@ class TunnelManager:
                     resp = await client.post(url, content=body.encode("utf-8"), headers=headers)
                     status = resp.status_code
                     text = resp.text
-                    self.stats["last_status"] = status
-                    self.stats["last_body"] = text[:200]
+                    self.last_status = status
+                    self.last_body = text[:200]
                     if status < 400:
                         try:
                             usage = metering.from_json(json.loads(text))
@@ -186,7 +188,7 @@ class TunnelManager:
                         method, url, content=body.encode("utf-8"), headers=headers
                     ) as resp:
                         status = resp.status_code
-                        self.stats["last_status"] = status
+                        self.last_status = status
                         buf = bytearray()
                         async for chunk in resp.aiter_bytes(4096):
                             served += len(chunk)
@@ -202,7 +204,7 @@ class TunnelManager:
                         await self._reply(
                             req_id, status, buf.decode("utf-8", "replace"), True, from_node, served
                         )
-                        self.stats["last_body"] = bytes(tail[-160:]).decode("utf-8", "replace")
+                        self.last_body = bytes(tail[-160:]).decode("utf-8", "replace")
                     if status < 400:
                         usage = metering.from_sse(bytes(tail))
         except Exception as exc:

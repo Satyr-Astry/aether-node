@@ -209,8 +209,8 @@ class P2PService:
     # ---------- 事件 ----------
     async def _on_event(self, evt: dict, relay: str) -> None:
         ad, err = parse_ad(evt)
-        if err:
-            self.peers.reject(err, relay)
+        if err or ad is None:
+            self.peers.reject(err or "广告解析为空", relay)
             return
         self.peers.ingest(ad, relay)
 

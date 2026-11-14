@@ -14,6 +14,7 @@ import contextlib
 import json
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import websockets
 
@@ -32,7 +33,7 @@ class RelayState:
         self.events_in = 0
         self.events_out = 0
         self.connected_at = 0.0
-        self.ws = None
+        self.ws: Any = None
         self.builtin = url.startswith("ws://127.0.0.1")
 
     def to_dict(self) -> dict:

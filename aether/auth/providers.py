@@ -9,7 +9,7 @@ import json
 import time
 from collections.abc import Mapping
 
-from aether.auth.base import AuthResult
+from aether.auth.base import AuthProvider, AuthResult
 
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -130,7 +130,7 @@ class JwtHs256Provider:
         return AuthResult.allow(principal)
 
 
-def build(settings) -> object:
+def build(settings) -> AuthProvider:
     """按配置挑 provider。未知模式回退到 api_key，不静默放行。"""
     mode = (getattr(settings, "auth_mode", "") or "api_key").strip().lower()
     trust_local = bool(getattr(settings, "auth_trust_local", True))

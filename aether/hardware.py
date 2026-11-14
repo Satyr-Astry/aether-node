@@ -95,7 +95,7 @@ def recommend(model_bytes: int, meta: GGUFMeta | None, gpu: GPU | None,
     overhead = int(1.4 * GB)  # 计算缓冲 + CUDA context
 
     layers = meta.block_count if meta and meta.block_count else 0
-    if layers and meta.ok:
+    if layers and meta is not None and meta.ok:
         per_layer = model_bytes / layers
         # KV cache：2（K+V）× ctx × kv_heads × head_dim × 2 bytes × layers
         head_dim = 128
