@@ -93,7 +93,7 @@ try {
 $sysA = Invoke-RestMethod -Uri "$A/api/system" -TimeoutSec 10
 Log "A relay: nodes_registered=$($sysA.relay.nodes_registered) tunnel_relayed=$($sysA.relay.tunnel_relayed) denied=$($sysA.relay.tunnel_denied)"
 $stB = Invoke-RestMethod -Uri "$B/api/p2p/status" -TimeoutSec 10
-Log "B tunnel: requests_out=$($stB.tunnel.requests_out) errors=$($stB.tunnel.errors)"
+Log "B tunnel: requests_out=$($stB.tunnel.requests_out) errors=$($stB.tunnel.errors) bytes_recv=$($stB.tunnel.bytes_recv) byte_mismatch=$($stB.tunnel.byte_mismatch)"
 $stA = Invoke-RestMethod -Uri "$A/api/p2p/status" -TimeoutSec 10
 Log "A tunnel: served=$($stA.tunnel.served) forwarded_in=$($stA.tunnel.forwarded_in) errors=$($stA.tunnel.errors) last_status=$($stA.tunnel.last_status) body=$($stA.tunnel.last_body)"
 

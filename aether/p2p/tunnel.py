@@ -54,9 +54,13 @@ class TunnelManager:
         self.client = client
         self.local_base_url = local_base_url
         self._pending: dict[str, asyncio.Queue] = {}
-        self.stats = {"forwarded_in": 0, "requests_out": 0, "served": 0, "errors": 0, "overloaded": 0}
+        self.stats = {
+            "forwarded_in": 0, "requests_out": 0, "served": 0, "errors": 0,
+            "overloaded": 0, "bytes_sent": 0, "bytes_recv": 0, "byte_mismatch": 0,
+        }
         self.last_error = ""
         self._sem: asyncio.Semaphore | None = None
+        self._declared_bytes: dict[str, int] = {}
 
     def _semaphore(self) -> asyncio.Semaphore:
         """目标端并发闸门。满就快速失败，让调用方换节点或重试，
@@ -153,9 +157,12 @@ class TunnelManager:
                             usage = metering.from_json(json.loads(text))
                         except Exception:
                             usage = {}
-                    await self._reply(req_id, status, text, True, from_node)
+                    await self._reply(
+                        req_id, status, text, True, from_node, len(text.encode("utf-8"))
+                    )
                 else:
                     tail = bytearray()
+                    served = 0
                     async with client.stream(
                         method, url, content=body.encode("utf-8"), headers=headers
                     ) as resp:
@@ -163,6 +170,7 @@ class TunnelManager:
                         self.stats["last_status"] = status
                         buf = bytearray()
                         async for chunk in resp.aiter_bytes(4096):
+                            served += len(chunk)
                             buf.extend(chunk)
                             tail.extend(chunk)
                             if len(tail) > metering.TAIL_BYTES:
@@ -173,7 +181,7 @@ class TunnelManager:
                                 )
                                 buf.clear()
                         await self._reply(
-                            req_id, status, buf.decode("utf-8", "replace"), True, from_node
+                            req_id, status, buf.decode("utf-8", "replace"), True, from_node, served
                         )
                         self.stats["last_body"] = bytes(tail[-160:]).decode("utf-8", "replace")
                     if status < 400:
@@ -213,15 +221,30 @@ class TunnelManager:
             self.stats["errors"] += 1
             self.last_error = f"记账失败: {exc}"[:200]
 
-    async def _reply(self, req_id: str, status: int, body: str, done: bool, target: str) -> None:
-        payload = json.dumps(["AETHER_RES", req_id, int(status), body, bool(done)], ensure_ascii=False)
-        await self.client.send_raw(payload)
+    async def _reply(
+        self, req_id: str, status: int, body: str, done: bool, target: str,
+        total_bytes: int | None = None,
+    ) -> None:
+        """回传结果。最后一块附带提供方统计的累计字节，供调用方做单笔对账。
+
+        这个字段不能证明 relay 没有虚报（那需要全网各 client 的观测之和），
+        但能证明传输过程中响应内容没有被裁剪或篡改。
+        """
+        payload = ["AETHER_RES", req_id, int(status), body, bool(done)]
+        if total_bytes is not None:
+            payload.append(int(total_bytes))
+        await self.client.send_raw(json.dumps(payload, ensure_ascii=False))
 
     # ---------- 调用端 ----------
     def _on_result(self, msg: list) -> None:
         if len(msg) < 5:
             return
         req_id = msg[1]
+        if len(msg) > 5 and msg[5] not in (None, ""):
+            try:
+                self._declared_bytes[req_id] = int(msg[5])
+            except (TypeError, ValueError):
+                pass
         queue = self._pending.get(req_id)
         if queue is None:
             return
@@ -260,6 +283,7 @@ class TunnelManager:
             if not sent:
                 raise TunnelError("没有可用的 relay 连接，无法走隧道")
 
+            received = 0
             deadline = time.monotonic() + REQ_TIMEOUT
             while True:
                 remaining = deadline - time.monotonic()
@@ -269,6 +293,20 @@ class TunnelManager:
                     item = await asyncio.wait_for(queue.get(), timeout=remaining)
                 except asyncio.TimeoutError:
                     raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）") from None
+                chunk_len = len(item[1].encode("utf-8"))
+                received += chunk_len
+                self.stats["bytes_recv"] += chunk_len
+                if item[2]:
+                    declared = self._declared_bytes.pop(req_id, None)
+                    if declared is not None:
+                        # 允许 5% 或 64 字节的偏差（分块边界与编码开销）
+                        drift = abs(received - declared)
+                        tolerance = max(64, int(declared * 0.05))
+                        if drift > tolerance:
+                            self.stats["byte_mismatch"] += 1
+                            self.last_error = (
+                                f"字节数不一致: 本地 {received} vs 对方 {declared}"
+                            )
                 yield item
                 if item[2]:
                     break
