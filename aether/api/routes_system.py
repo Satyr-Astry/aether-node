@@ -243,6 +243,11 @@ async def metrics() -> PlainTextResponse:
 
     emit("aether_runtime_ready", "模型是否已加载可服务", "gauge",
          [("aether_runtime_ready", 1 if rt.get("state") == "ready" else 0, None)])
+    # 在途请求数是闸门是否泄漏的直接指标：压测后应当回到 0
+    from aether.api import routes_openai
+
+    emit("aether_inflight", "当前在途的 /v1 请求数", "gauge",
+         [("aether_inflight", routes_openai._inflight, None)])
     emit("aether_relay_connected", "已连接的 relay 数", "gauge",
          [("aether_relay_connected", state.p2p.client.connected_count, None)])
     emit("aether_peers", "发现的网络节点数", "gauge",

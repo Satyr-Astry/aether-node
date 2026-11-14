@@ -5,7 +5,7 @@
 
 import json
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 18999
 ANSWER = "这是来自外部 API 的回答。"
@@ -65,4 +65,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"mock listening on {PORT}", flush=True)
-    HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # 用多线程版本：压测时单线程 server 会成为瓶颈，测出来的延迟不是代理层的
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

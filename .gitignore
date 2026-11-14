@@ -22,6 +22,8 @@ __pycache__/
 .chain-*/
 .sec-test/
 .ui-test/
+.load-test/
+.load2/
 .ext-test/
 *.log
 
