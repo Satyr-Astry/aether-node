@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AetherNode</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="dot"></span>AetherNode</div>
+  <nav id="tabs">
+    <button data-view="models" class="active">模型库</button>
+    <button data-view="runtime">运行时</button>
+    <button data-view="network">网络</button>
+    <button data-view="ledger">账本</button>
+    <button data-view="chat">对话</button>
+    <button data-view="settings">设置</button>
+  </nav>
+  <div class="status">
+    <span id="pill-runtime" class="pill">未加载</span>
+    <span id="pill-relay" class="pill">relay 0</span>
+    <span id="pill-peers" class="pill">peers 0</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== 模型库 ===================== -->
+  <section id="view-models" class="view active">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>搜索 Hugging Face</h2>
+        <div class="searchbar">
+          <input id="hub-q" type="text" placeholder="例如 qwen2.5 7b instruct，只检索 GGUF">
+          <button id="hub-search" class="primary">搜索</button>
+        </div>
+      </div>
+      <div id="hub-curated" class="chips"></div>
+      <div id="hub-results" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>下载任务</h2>
+        <button id="dl-clear" class="ghost">清理已完成</button>
+      </div>
+      <div id="downloads" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>本地模型</h2>
+        <button id="models-refresh" class="ghost">刷新</button>
+      </div>
+      <div id="local-models" class="list"></div>
+    </div>
+  </section>
+
+  <!-- ===================== 运行时 ===================== -->
+  <section id="view-runtime" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>推理运行时</h2>
+        <div class="row">
+          <button id="runtime-install" class="ghost">安装 / 修复 llama.cpp</button>
+          <button id="runtime-unload" class="ghost danger">卸载模型</button>
+        </div>
+      </div>
+      <div id="runtime-info" class="kv"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>运行日志</h2>
+        <label class="toggle"><input id="log-follow" type="checkbox" checked> 自动滚动</label>
+      </div>
+      <pre id="runtime-log" class="log"></pre>
+    </div>
+  </section>
+
+  <!-- ===================== 网络 ===================== -->
+  <section id="view-network" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>本节点</h2>
+        <div class="row">
+          <label class="toggle"><input id="advertise-toggle" type="checkbox"> 广播本机服务</label>
+          <button id="publish-now" class="primary">立即发布</button>
+        </div>
+      </div>
+      <div id="node-info" class="kv"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Relay 连接</h2>
+        <div class="searchbar">
+          <input id="relay-url" type="text" placeholder="wss://relay.example.com 或 ws://192.168.1.10:8737/relay">
+          <button id="relay-add" class="ghost">添加</button>
+        </div>
+      </div>
+      <div id="relays" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>网络内节点</h2>
+        <button id="peers-refresh" class="ghost">刷新</button>
+      </div>
+      <div id="peers" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>统一模型目录（本地 + 网络）</h2>
+      </div>
+      <div id="catalog" class="list"></div>
+    </div>
+  </section>
+
+  <!-- ===================== 对话 ===================== -->
+  <section id="view-chat" class="view">
+    <div class="panel chat-panel">
+      <div class="panel-head">
+        <h2>对话测试</h2>
+        <select id="chat-model"></select>
+      </div>
+      <div id="chat-log" class="chat-log"></div>
+      <div class="composer">
+        <textarea id="chat-input" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+        <div class="composer-actions">
+          <span id="chat-route" class="muted">未发送</span>
+          <button id="chat-send" class="primary">发送</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- ===================== 账本 ===================== -->
+  <section id="view-ledger" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>计量汇总</h2>
+        <div class="row">
+          <button id="ledger-refresh" class="ghost">刷新</button>
+          <button id="ledger-settle" class="primary">结算未结记录</button>
+        </div>
+      </div>
+      <div id="ledger-summary" class="kv"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>对端信用（应收 - 应付）</h2>
+      </div>
+      <div id="ledger-credit" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>最近流水</h2>
+        <span class="muted">consume = 我调用别人，serve = 别人调用我</span>
+      </div>
+      <div id="ledger-entries" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>结算批次</h2>
+      </div>
+      <div id="ledger-batches" class="list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>抽样复算</h2>
+        <div class="row">
+          <button id="audit-refresh" class="ghost">刷新</button>
+          <button id="audit-probe" class="primary">手动复算</button>
+        </div>
+      </div>
+      <div id="audit-stats" class="kv"></div>
+      <div id="audit-list" class="list" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>贡献与代币发放</h2>
+        <div class="row">
+          <button id="emission-refresh" class="ghost">刷新</button>
+          <button id="emission-publish" class="primary">发布清单</button>
+        </div>
+      </div>
+      <div id="emission-info" class="kv"></div>
+      <div id="emission-list" class="list" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>链上结算载荷</h2>
+        <div class="row">
+          <button id="chain-refresh" class="ghost">刷新</button>
+          <button id="chain-build" class="primary">为最新批次生成交易</button>
+        </div>
+      </div>
+      <div id="chain-info" class="kv"></div>
+      <pre id="chain-tx" class="log" style="height:150px">尚未生成</pre>
+    </div>
+  </section>
+  <!-- ===================== 设置 ===================== -->
+  <section id="view-settings" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>服务与共享</h2>
+        <div class="row">
+          <span id="share-hint" class="muted"></span>
+          <button id="share-toggle" class="ghost">切换共享</button>
+        </div>
+      </div>
+      <div id="share-info" class="kv"></div>
+    </div>
+
+    <div id="settings-form"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>自有外部 API</h2>
+        <div class="row">
+          <button id="provider-save" class="primary">保存端点</button>
+        </div>
+      </div>
+      <div id="provider-form" class="row" style="margin-bottom:10px">
+        <input id="prov-name" type="text" placeholder="名称，如 my-openai" style="flex:0 0 160px">
+        <input id="prov-endpoint" type="text" placeholder="https://api.openai.com" style="flex:1 1 260px">
+        <input id="prov-key" type="text" placeholder="api_key" style="flex:0 0 180px">
+        <input id="prov-models" type="text" placeholder="模型，逗号分隔" style="flex:0 0 200px">
+        <input id="prov-price" type="text" placeholder="价格 in,out" style="flex:0 0 120px">
+      </div>
+      <div id="provider-list" class="list"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>

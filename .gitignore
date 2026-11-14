@@ -1,0 +1,32 @@
+# 运行时数据：模型、llama.cpp 与 CUDA 运行时、账本、结算与发放清单
+data/
+*.db
+*.db-journal
+
+# 虚拟环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 测试与调试残留
+.smoke*/
+.*-test/
+.verify/
+.audit-*/
+.ledger-*/
+.emis-*/
+.payout-*/
+.chain-*/
+.sec-test/
+.ui-test/
+.ext-test/
+*.log
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
