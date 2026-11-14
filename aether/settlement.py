@@ -125,7 +125,7 @@ def settle(role: str | None = None) -> dict:
                 "leaf": leaf,
                 "proof": merkle_proof(leaves, leaf),
             }
-            for e, leaf in zip(entries, leaves)
+            for e, leaf in zip(entries, leaves, strict=True)
         ],
     }
     path.write_text(json.dumps(proof, indent=2, ensure_ascii=False), encoding="utf-8")

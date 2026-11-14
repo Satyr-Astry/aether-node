@@ -21,7 +21,7 @@ import asyncio
 import json
 import secrets
 import time
-from typing import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
 
 import httpx
 
@@ -299,7 +299,7 @@ class TunnelManager:
         try:
             # 签名覆盖业务请求 id，双方记账才能按同一个键对齐
             signed = self.identity.sign_bytes(
-                f"{req_id}:{target}:{method}:{path}:{body}:{biz_id}".encode("utf-8")
+                f"{req_id}:{target}:{method}:{path}:{body}:{biz_id}".encode()
             )
             payload = json.dumps(
                 ["AETHER_REQ", req_id, target, method, path, body, int(time.time()), signed.hex(), biz_id],
@@ -319,7 +319,7 @@ class TunnelManager:
                     raise TunnelError(f"隧道请求超时（{req_timeout:.0f}s）")
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=min(remaining, 2.0))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # 所有 relay 都回绝了，就别再等到超时
                     if self._denied.get(req_id, 0) >= sent:
                         raise TunnelError(
@@ -420,5 +420,5 @@ def verify_request(pubkey: str, msg: list) -> bool:
     if abs(time.time() - ts) > HELLO_TTL:
         return False
     return Identity.verify_bytes(
-        pubkey, f"{req_id}:{target}:{method}:{path}:{body}:{biz_id}".encode("utf-8"), sig
+        pubkey, f"{req_id}:{target}:{method}:{path}:{body}:{biz_id}".encode(), sig
     )

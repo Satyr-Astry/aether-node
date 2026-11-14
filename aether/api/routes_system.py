@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from aether import APP_NAME, __version__
@@ -127,7 +127,7 @@ async def event_stream(request: Request) -> StreamingResponse:
                 try:
                     evt = await asyncio.wait_for(queue.get(), timeout=15)
                     yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"
         finally:
             bus.unsubscribe(queue)
@@ -251,7 +251,6 @@ async def metrics() -> PlainTextResponse:
     rt = runtime.status()
     summary = state.ledger.summary()
     stats = memory_relay.stats()
-    routing = state.p2p.router
     audit = state.ledger.audit_stats()
 
     lines: list[str] = []

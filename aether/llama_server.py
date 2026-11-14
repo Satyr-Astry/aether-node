@@ -328,7 +328,7 @@ class LlamaRuntime:
                 proc.terminate()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=8)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 with contextlib.suppress(ProcessLookupError):
                     proc.kill()
                 with contextlib.suppress(Exception):

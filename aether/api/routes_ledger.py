@@ -6,8 +6,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from aether.api.state import get_state
 from aether import settlement
+from aether.api.state import get_state
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 

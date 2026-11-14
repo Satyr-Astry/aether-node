@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 
 from aether.config import get_settings
-from aether.llama_server import LlamaRuntime
 from aether.library import ModelLibrary
+from aether.llama_server import LlamaRuntime
 from aether.p2p.discovery import PeerTable
 
 REACH_BONUS = {"public": 40.0, "lan": 32.0, "relay-only": -18.0, "unknown": 0.0}

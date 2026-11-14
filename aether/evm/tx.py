@@ -159,7 +159,7 @@ def decode_raw_1559(raw_hex: str) -> dict:
         "value", "data", "access_list", "y_parity", "r", "s",
     ]
     out: dict = {}
-    for name, value in zip(names, items):
+    for name, value in zip(names, items, strict=True):
         if isinstance(value, list):
             out[name] = value
         elif name in ("to", "data"):
@@ -220,7 +220,7 @@ def decode_raw(raw_hex: str) -> dict:
         raise ValueError("不是 9 字段的 legacy 交易")
     names = ["nonce", "gas_price", "gas_limit", "to", "value", "data", "v", "r", "s"]
     out: dict = {}
-    for name, value in zip(names, items):
+    for name, value in zip(names, items, strict=True):
         if isinstance(value, list):
             out[name] = value
         elif name in ("to", "data"):

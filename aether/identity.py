@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 
 from aether import secp256k1 as sk
 from aether.config import get_settings
@@ -47,7 +46,7 @@ class Identity:
         self._pub = sk.pubkey_xonly(self._seckey)
 
     @classmethod
-    def load_or_create(cls) -> "Identity":
+    def load_or_create(cls) -> Identity:
         path = get_settings().home / "identity.json"
         if path.exists():
             try:

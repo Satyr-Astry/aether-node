@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @dataclass
@@ -13,11 +14,11 @@ class AuthResult:
     reason: str = ""
 
     @classmethod
-    def allow(cls, principal: str = "local") -> "AuthResult":
+    def allow(cls, principal: str = "local") -> AuthResult:
         return cls(True, principal, "")
 
     @classmethod
-    def deny(cls, reason: str) -> "AuthResult":
+    def deny(cls, reason: str) -> AuthResult:
         return cls(False, "", reason)
 
 

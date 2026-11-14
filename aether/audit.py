@@ -16,6 +16,7 @@ import difflib
 import random
 import time
 import uuid
+
 from aether.config import get_settings
 from aether.events import bus
 from aether.ledger import get_ledger
@@ -74,7 +75,6 @@ def record(
     detail: str = "",
     similarity_override: float | None = None,
 ) -> dict:
-    settings = get_settings()
     o_in, o_out = _usage(original)
     v_in, v_out = _usage(verified)
     orig_text = _content(original)

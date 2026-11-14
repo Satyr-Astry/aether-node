@@ -125,7 +125,7 @@ def schnorr_sign(msg32: bytes, seckey: bytes, aux: bytes | None = None) -> bytes
         raise ValueError("私钥超出范围")
     point = _affine_mul((GX, GY), d0)
     d = d0 if _has_even_y(point) else N - d0
-    t = bytes(a ^ b for a, b in zip(d.to_bytes(32, "big"), _tagged_hash("BIP0340/aux", aux)))
+    t = bytes(a ^ b for a, b in zip(d.to_bytes(32, "big"), _tagged_hash("BIP0340/aux", aux), strict=True))
     px = _xonly(point)
     k0 = int.from_bytes(_tagged_hash("BIP0340/nonce", t + px + msg32), "big") % N
     if k0 == 0:

@@ -13,7 +13,7 @@ import asyncio
 import contextlib
 import json
 import time
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import websockets
 

@@ -9,8 +9,6 @@ v1 的计量是「双方自述 + 按 req_id 对账」，能发现记录不一致
 
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 import threading
 import time

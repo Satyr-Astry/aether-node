@@ -14,7 +14,7 @@ from aether.events import bus
 from aether.identity import get_identity
 from aether.library import ModelLibrary
 from aether.llama_server import LlamaRuntime
-from aether.p2p.ad import KIND_AD, TOPIC, DEFAULT_TTL, build_ad, build_event, parse_ad
+from aether.p2p.ad import DEFAULT_TTL, KIND_AD, TOPIC, build_ad, build_event, parse_ad
 from aether.p2p.discovery import PeerTable
 from aether.p2p.nostr import NostrClient
 from aether.p2p.router import Router
