@@ -68,6 +68,8 @@ class MemoryRelay:
         # 隧道：身份注册表与在途请求归属
         self._ws_node: dict[WebSocket, str] = {}
         self._by_node: dict[str, WebSocket] = {}
+        # 连接断开的时间，用于延迟清理注册表
+        self._node_offline_at: dict[str, float] = {}
         self._req_owner: dict[str, tuple[WebSocket, float]] = {}
         # 中继带宽计量。
         # bandwidth 是按对端的流量明细（分析用）；relay_total_bytes 才是
@@ -133,6 +135,33 @@ class MemoryRelay:
         for req_id, _ in ordered[: len(self._seen) - limit]:
             self._seen.pop(req_id, None)
 
+    def _prune_nodes(self) -> None:
+        """清理离线超时的节点注册。
+
+        节点重启时旧 ws 会关闭，但新 ws 可能已经注册。这里只清理「标记离线
+        且超过 TTL」的条目，并且要确认当前注册的 ws 确实已经关闭——新连接
+        还活着就不动它。
+        """
+        if not self._node_offline_at:
+            return
+        now = time.time()
+        ttl = 120.0
+        for node, offline_at in list(self._node_offline_at.items()):
+            if now - offline_at < ttl:
+                continue
+            ws = self._by_node.get(node)
+            alive = False
+            if ws is not None:
+                try:
+                    alive = ws.client_state.name != "DISCONNECTED"
+                except Exception:
+                    alive = False
+            if not alive:
+                self._by_node.pop(node, None)
+                self._node_offline_at.pop(node, None)
+            else:
+                self._node_offline_at.pop(node, None)
+
     def _check_rate(self, node: str) -> str | None:
         """每节点每分钟的请求配额。返回拒绝原因，通过则返回 None。"""
         limit = int(get_settings().relay_rate_limit or 0)
@@ -185,6 +214,7 @@ class MemoryRelay:
             return
         self._ws_node[ws] = pubkey
         self._by_node[pubkey] = ws
+        self._node_offline_at.pop(pubkey, None)  # 重新上线，清掉离线标记
         await self._send(ws, ["AETHER_HELLO_OK", pubkey])
         bus.publish("relay.hello", {"node_id": pubkey[:12], "clients": len(self._by_node)})
 
@@ -226,6 +256,7 @@ class MemoryRelay:
             await self._send(ws, ["AETHER_REQ_DENIED", req_id, reason])
             return
         self._prune_requests()
+        self._prune_nodes()
         self._req_owner[req_id] = (ws, time.time())
         self.tunnel_relayed += 1
         # biz_id 放在第 7 位随转发带过去，目标节点用它写账本，双方才能按同一键对账
@@ -314,13 +345,11 @@ class MemoryRelay:
             self._subs.pop(ws, None)
             self._locks.pop(ws, None)
             node = self._ws_node.pop(ws, None)
-            bus.publish("relay.ws_closed", {
-                "node": (node or "-")[:12],
-                "by_node_before": [k[:12] for k in self._by_node],
-                "same_ws": bool(node and self._by_node.get(node) is ws),
-            })
-            if node and self._by_node.get(node) is ws:
-                del self._by_node[node]
+            # 刻意不立即从 _by_node 删除：节点重启时旧连接会晚于新连接关闭，
+            # 立刻删会把新连接刚注册的条目一起抹掉，导致"重启后不在线"。
+            # 改为标记离线，由 _prune_nodes 在超时后清理。
+            if node:
+                self._node_offline_at.setdefault(node, time.time())
             bus.publish("relay.client", {"clients": len(self._subs)})
 
     def stats(self) -> dict:
@@ -334,6 +363,7 @@ class MemoryRelay:
             "tunnel_relayed": self.tunnel_relayed,
             "tunnel_denied": self.tunnel_denied,
             "tunnel_pending": len(self._req_owner),
+            "nodes_offline_pending": len(self._node_offline_at),
             "rate_limited": self.rate_limited,
             "replay_blocked": self.replay_blocked,
             "relay_total_bytes": self.relay_total_bytes,

@@ -61,6 +61,8 @@ class TunnelManager:
         self.last_error = ""
         self._sem: asyncio.Semaphore | None = None
         self._declared_bytes: dict[str, int] = {}
+        self._denied: dict[str, int] = {}
+        self._denied_reason: dict[str, str] = {}
 
     def _semaphore(self) -> asyncio.Semaphore:
         """目标端并发闸门。满就快速失败，让调用方换节点或重试，
@@ -256,10 +258,17 @@ class TunnelManager:
     def _on_denied(self, msg: list) -> None:
         if len(msg) < 3:
             return
-        queue = self._pending.get(msg[1])
+        req_id = msg[1]
+        reason = str(msg[2])
+        # 只计数，不立刻判失败：请求是广播给所有 relay 的，其中只有「认识目标节点」
+        # 的那个能转发，其余都会回「不在线」。收到一两个拒绝不代表真的失败。
+        self._denied[req_id] = self._denied.get(req_id, 0) + 1
+        self._denied_reason[req_id] = reason
+        queue = self._pending.get(req_id)
         if queue is not None:
             try:
-                queue.put_nowait((404, json.dumps({"error": msg[2]}), True))
+                # 用一个哨兵值唤醒主循环去检查是否已被全部拒绝
+                queue.put_nowait((0, reason, False))
             except asyncio.QueueFull:
                 pass
 
@@ -290,9 +299,25 @@ class TunnelManager:
                 if remaining <= 0:
                     raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）")
                 try:
-                    item = await asyncio.wait_for(queue.get(), timeout=remaining)
+                    item = await asyncio.wait_for(queue.get(), timeout=min(remaining, 2.0))
                 except asyncio.TimeoutError:
-                    raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）") from None
+                    # 所有 relay 都回绝了，就别再等到超时
+                    if self._denied.get(req_id, 0) >= sent:
+                        raise TunnelError(
+                            f"所有 relay 都拒绝转发：{self._denied_reason.get(req_id, '未知原因')}"
+                        ) from None
+                    if time.monotonic() >= deadline:
+                        raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）") from None
+                    continue
+
+                if item[0] == 0 and not item[2]:
+                    # 拒绝哨兵：继续等其它 relay
+                    if self._denied.get(req_id, 0) >= sent:
+                        raise TunnelError(
+                            f"所有 relay 都拒绝转发：{self._denied_reason.get(req_id, '未知原因')}"
+                        )
+                    continue
+
                 chunk_len = len(item[1].encode("utf-8"))
                 received += chunk_len
                 self.stats["bytes_recv"] += chunk_len
@@ -315,6 +340,8 @@ class TunnelManager:
             # 声明字节也要清：请求超时或中途失败时不会走到 done 分支，
             # 不在这里 pop 就会长期残留，成为慢速内存泄漏
             self._declared_bytes.pop(req_id, None)
+            self._denied.pop(req_id, None)
+            self._denied_reason.pop(req_id, None)
 
     async def request(
         self, target: str, method: str, path: str, body: str,
