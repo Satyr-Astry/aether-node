@@ -16,7 +16,6 @@ import difflib
 import random
 import time
 import uuid
-
 from aether.config import get_settings
 from aether.events import bus
 from aether.ledger import get_ledger
@@ -139,17 +138,26 @@ def judge(original: dict | None, verified: dict | None) -> tuple[str, float]:
 
 
 async def run_audit(router, tunnel, route, payload: dict, original: dict, req_id: str) -> dict:
-    """对一次已完成的跨节点请求做复算审计。"""
+    """对一次已完成的跨节点请求做复算审计。
+
+    验证者从候选里随机挑，不固定取第一个——固定选择会让作恶者只需与
+    「排第一的那个」串通就能绕过审计。同时跳过与目标同主机的候选，
+    避免同一台机器自己验证自己。
+    """
     settings = get_settings()
-    others = [c for c in router.candidates(route.model_id) if c.node_id != route.node_id]
-    if not others:
+    target_host = _host_of(route)
+    candidates = [
+        c for c in router.candidates(route.model_id)
+        if c.node_id != route.node_id and _host_of(c) != target_host
+    ]
+    if not candidates:
         return record(
             req_id=req_id, model=route.model_id, target_node=route.node_id, verifier="",
             original=original, verified=None, verdict="skipped",
-            detail="网络内没有第二个提供同模型的节点，无法复算",
+            detail="没有可用的独立验证者（网络内无第二个提供该模型的节点，或候选与目标同主机）",
         )
 
-    verifier = others[0]
+    verifier = random.choice(candidates)
     body = normalize_payload(payload, settings.audit_seed)
     try:
         if verifier.kind == "relay":
@@ -157,7 +165,9 @@ async def run_audit(router, tunnel, route, payload: dict, original: dict, req_id
                 tunnel, verifier.node_id, body, uuid.uuid4().hex
             )
         else:
-            data = await upstream.chat(verifier.base_url, body)
+            data = await upstream.chat(
+                verifier.base_url, body, (verifier.extra or {}).get("api_key")
+            )
     except Exception as exc:
         return record(
             req_id=req_id, model=route.model_id, target_node=route.node_id,
@@ -171,3 +181,18 @@ async def run_audit(router, tunnel, route, payload: dict, original: dict, req_id
         verifier=verifier.node_id, original=original, verified=data,
         verdict=verdict, similarity_override=sim,
     )
+
+
+def _host_of(route) -> str:
+    """从端点或 node_id 推断主机标识，用于「不要自己验证自己」与同主机聚类。"""
+    endpoint = str(getattr(route, "base_url", "") or "")
+    if endpoint:
+        try:
+            from urllib.parse import urlparse
+
+            host = urlparse(endpoint).hostname or ""
+            if host:
+                return host
+        except Exception:
+            pass
+    return str(getattr(route, "node_id", "") or "")

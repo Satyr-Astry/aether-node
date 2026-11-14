@@ -39,6 +39,25 @@ class Route:
         }
 
 
+def _peer_host(peer: dict) -> str:
+    """同主机判定用的标识。
+
+    有端点就看主机名；没有端点（relay-only）退回 node_id——那种情况本来就
+    只能走隧道，聚在一起也不构成刷分优势。
+    """
+    endpoint = str(peer.get("endpoint") or "")
+    if endpoint:
+        try:
+            from urllib.parse import urlparse
+
+            host = urlparse(endpoint).hostname or ""
+            if host:
+                return host
+        except Exception:
+            pass
+    return str(peer.get("node_id") or "")
+
+
 class Router:
     def __init__(self, runtime: LlamaRuntime, library: ModelLibrary, peers: PeerTable) -> None:
         self.runtime = runtime
@@ -77,9 +96,19 @@ class Router:
     # ---- 远端 ----
     def _remote_routes(self, model_id: str) -> list[Route]:
         routes: list[Route] = []
-        for peer in self.peers.peers():
+        peers = self.peers.peers()
+        # 女巫防护：一个 IP 后面挂多个身份是最常见的刷分形态。
+        # 按簇大小降权，让独立主机排在前面，但不禁用——同机多实例是合理用法。
+        host_counts: dict[str, int] = {}
+        for p in peers:
+            host = _peer_host(p)
+            host_counts[host] = host_counts.get(host, 0) + 1
+
+        for peer in peers:
             endpoint = peer.get("endpoint") or ""
             reach = peer.get("reachability") or "unknown"
+            cluster = host_counts.get(_peer_host(peer), 1)
+            sybil_penalty = -6.0 * (cluster - 1)
             for model in peer.get("models") or []:
                 if str(model.get("id")) != model_id:
                     continue
@@ -88,7 +117,9 @@ class Router:
                 score += max(0.0, 30.0 - age / 30.0)
                 price = peer.get("price") or {}
                 score -= float(price.get("out") or 0) * 5
-                extra = {"size_gb": model.get("size_gb"), "gpu": model.get("gpu")}
+                score += sybil_penalty
+                extra = {"size_gb": model.get("size_gb"), "gpu": model.get("gpu"), "cluster": cluster}
+                suffix = f" | 同主机 {cluster} 个身份" if cluster > 1 else ""
 
                 if endpoint and reach != "relay-only":
                     routes.append(Route(
@@ -99,7 +130,7 @@ class Router:
                         node_name=peer.get("name") or peer["short_id"],
                         score=score,
                         ctx=int(model.get("ctx") or 0),
-                        note=f"{reach} / 广告龄 {age:.0f}s",
+                        note=f"{reach} / 广告龄 {age:.0f}s{suffix}",
                         price=price,
                         extra=extra,
                     ))
@@ -113,7 +144,7 @@ class Router:
                         node_name=peer.get("name") or peer["short_id"],
                         score=score,
                         ctx=int(model.get("ctx") or 0),
-                        note=f"经 relay 隧道 / 广告龄 {age:.0f}s",
+                        note=f"经 relay 隧道 / 广告龄 {age:.0f}s{suffix}",
                         price=price,
                         extra=extra,
                     ))
