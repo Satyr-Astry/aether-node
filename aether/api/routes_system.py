@@ -389,3 +389,14 @@ async def identity_verify(payload: dict) -> dict:
         "pubkey": recovered.get("pubkey"),
         "matches_current": recovered.get("pubkey") == get_identity().pubkey,
     }
+
+@router.get("/update/check")
+async def update_check(force: bool = False) -> dict:
+    """检查新版本。只告知，不自动下载或替换。"""
+    from aether import __version__
+    from aether.updater import get_checker
+
+    checker = get_checker(__version__)
+    result = await checker.check(force=force)
+    result["error"] = checker.last_error
+    return result

@@ -1264,8 +1264,63 @@ async function refreshSettings() {
     S.settings = r.settings || {};
     renderSettings();
     await refreshProviders();
+    renderVersionInfo();
   } catch (err) {
     toast("读取设置失败：" + err.message, "err");
+  }
+}
+
+/* ---------------- 版本 ---------------- */
+function renderVersionInfo(update) {
+  const box = $("#update-info");
+  if (!box) return;
+  const current = (S.sys && S.sys.version) || "-";
+  box.innerHTML = "";
+  const rows = [
+    ["当前版本", current],
+    ["状态", update ? updateText(update) : "未检查"],
+  ];
+  if (update && update.latest) rows.push(["最新版本", update.latest]);
+  if (update && update.url) rows.push(["发布页", update.url]);
+  if (update && update.error) rows.push(["说明", update.error]);
+  for (const [k, v] of rows) {
+    box.appendChild(el("div", "k", k));
+    box.appendChild(el("div", "v", String(v)));
+  }
+}
+
+function updateText(u) {
+  switch (u.status) {
+    case "ok":
+      return u.update_available ? "有新版本可用" : "已是最新";
+    case "no_releases":
+      return "仓库暂无发布";
+    case "rate_limited":
+      return "GitHub 限流，稍后再试";
+    case "unreachable":
+      return "无法连接 GitHub";
+    default:
+      return "未知";
+  }
+}
+
+async function checkUpdate() {
+  const btn = $("#update-check");
+  btn.disabled = true;
+  btn.textContent = "检查中…";
+  try {
+    const u = await api("/api/update/check?force=true", { timeout: 20000 });
+    renderVersionInfo(u);
+    if (u.update_available) {
+      toast(`发现新版本 ${u.latest}`, "ok");
+    } else {
+      toast(updateText(u), u.status === "ok" ? "ok" : "warn");
+    }
+  } catch (err) {
+    toast("检查失败：" + err.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "检查更新";
   }
 }
 
@@ -1585,6 +1640,7 @@ async function init() {
   $("#share-toggle").onclick = toggleShare;
   $("#provider-save").onclick = saveProvider;
   $("#onboarding-dismiss").onclick = dismissOnboarding;
+  $("#update-check").onclick = checkUpdate;
   $("#chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
