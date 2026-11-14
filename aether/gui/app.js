@@ -36,11 +36,35 @@ function toast(msg, kind = "info") {
   }, kind === "err" ? 6000 : 3200);
 }
 
+/* 骨架屏：长任务与首屏加载时给出明确占位，而不是一片空白 */
+function skeleton(container, rows = 3, hint = "加载中…") {
+  if (!container) return;
+  container.innerHTML = "";
+  if (hint) container.appendChild(el("div", "empty", hint));
+  for (let i = 0; i < rows; i++) {
+    const item = el("div", "item skeleton-item");
+    item.appendChild(el("div", "skeleton-bar", null)).style.width = 60 - i * 12 + "%";
+    container.appendChild(item);
+  }
+}
+
+/* 带超时与明确错误信息的请求；失败时把 HTTP 状态也带出来，方便判断是网络还是服务问题 */
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), opts.timeout || 30000);
+  let res;
+  try {
+    res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...opts,
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    const msg = err.name === "AbortError" ? `请求超时（${(opts.timeout || 30000) / 1000}s）` : "网络不可达";
+    throw new Error(`${msg}：${path}`);
+  }
+  clearTimeout(timeout);
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
     try {
@@ -1411,19 +1435,56 @@ function handleEvent(evt) {
 
 function connectEvents() {
   const es = new EventSource("/api/events");
+  es.onopen = () => setLinkState(true);
   es.onmessage = (e) => {
     try {
       handleEvent(JSON.parse(e.data));
     } catch (_) {}
   };
   es.onerror = () => {
-    /* 浏览器会自动重连 */
+    // EventSource 会自动重连，这里只把状态显示出来，不弹 toast 免得刷屏
+    setLinkState(false);
   };
+}
+
+/* 连接状态指示：SSE 断开时用户需要知道数据停止更新了 */
+function setLinkState(connected) {
+  S.linkUp = connected;
+  const dot = $("#link-state");
+  if (!dot) return;
+  dot.textContent = connected ? "实时" : "已断开，重连中…";
+  dot.className = "pill " + (connected ? "ok" : "err");
+}
+
+/* 快捷键：Ctrl+1..6 切视图，Ctrl+Enter 发消息，Esc 关闭提示 */
+function bindShortcuts() {
+  const views = ["models", "runtime", "network", "ledger", "chat", "settings"];
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && !e.shiftKey && e.key >= "1" && e.key <= "6") {
+      const target = views[Number(e.key) - 1];
+      const btn = document.querySelector(`#tabs button[data-view="${target}"]`);
+      if (btn) {
+        e.preventDefault();
+        btn.click();
+      }
+    }
+    if (e.ctrlKey && e.key === "Enter") {
+      const view = document.querySelector("#view-chat");
+      if (view && view.classList.contains("active")) {
+        e.preventDefault();
+        sendChat();
+      }
+    }
+    if (e.key === "Escape") {
+      $("#toasts").innerHTML = "";
+    }
+  });
 }
 
 /* ---------------- 初始化 ---------------- */
 async function init() {
   initTabs();
+  bindShortcuts();
 
   $("#hub-search").onclick = searchHub;
   $("#hub-q").addEventListener("keydown", (e) => { if (e.key === "Enter") searchHub(); });
@@ -1461,6 +1522,10 @@ async function init() {
     const c = await api("/api/hub/curated");
     renderCurated(c.items || []);
   } catch (_) {}
+
+  // 首屏先给骨架，避免空白等待
+  skeleton($("#local-models"), 2, "正在读取本地模型…");
+  skeleton($("#ledger-entries"), 2, "正在读取账本…");
 
   await refreshSystem();
   await refreshRuntime();
