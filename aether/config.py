@@ -87,6 +87,7 @@ class Settings(BaseModel):
     relay_rate_limit: int = 60        # 每个节点每分钟最多发起的隧道请求数，0 = 不限
     relay_replay_window: int = 300    # 请求 id 去重窗口（秒）
     tunnel_max_concurrency: int = 4   # 本节点同时处理的隧道请求上限
+    tunnel_timeout: float = 180.0     # 单次隧道请求的总超时（秒）
     api_max_concurrency: int = 4      # /v1 同时处理的请求上限
 
     # ---- 首次启动 ----

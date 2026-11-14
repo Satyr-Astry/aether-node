@@ -310,11 +310,13 @@ class TunnelManager:
                 raise TunnelError("没有可用的 relay 连接，无法走隧道")
 
             received = 0
-            deadline = time.monotonic() + REQ_TIMEOUT
+            # 超时从配置读：硬编码的 180 秒在测试里没法验证超时路径
+            req_timeout = float(get_settings().tunnel_timeout or REQ_TIMEOUT)
+            deadline = time.monotonic() + req_timeout
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）")
+                    raise TunnelError(f"隧道请求超时（{req_timeout:.0f}s）")
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=min(remaining, 2.0))
                 except asyncio.TimeoutError:
@@ -324,7 +326,7 @@ class TunnelManager:
                             f"所有 relay 都拒绝转发：{self._denied_reason.get(req_id, '未知原因')}"
                         ) from None
                     if time.monotonic() >= deadline:
-                        raise TunnelError(f"隧道请求超时（{REQ_TIMEOUT:.0f}s）") from None
+                        raise TunnelError(f"隧道请求超时（{req_timeout:.0f}s）") from None
                     continue
 
                 if item[0] == 0 and not item[2]:
