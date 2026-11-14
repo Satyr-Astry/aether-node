@@ -767,6 +767,25 @@ tests/
 返回的 PID 是 launcher（4MB），真正跑服务的是它的子进程（60MB）。改成按命令行匹配取
 最大进程后才是真实数字。**一个错误的采样口径能让最关键的指标看起来完美**。
 
+## 静态检查
+
+```powershell
+.venv\Scripts\python.exe -m ruff check aether
+.venv\Scripts\python.exe -m mypy aether --ignore-missing-imports
+```
+
+两者现在都是零告警，CI 里也跑同样的命令。
+
+这不是形式主义——这一轮和上一轮靠它们抓到的都是**运行测试覆盖不到**的东西：
+
+| 工具 | 抓到的问题 |
+|---|---|
+| ruff | `routes_system.py` 有 7 处 `raise HTTPException` 却没导入它，错误分支会抛 `NameError` 而不是返回 4xx |
+| mypy | `library.py` 里局部变量 `m` 同时被当作 `LocalModel` 与正则 `Match`；`hardware.py` 里 `meta` 可能为 None 却直接访问 `.ok`；`auth.build()` 声明返回 `object` 导致调用方类型全丢 |
+
+运行测试验证行为对不对，ruff 验证代码自洽，mypy 验证类型契约——三者覆盖的面完全不同。
+前两轮的产出密度明显高于继续写功能测试。
+
 ## 尚未实现
 
 - UDP 打洞（libp2p DCUtR）：当前无直达端点时走 relay 隧道，不建立点对点直连

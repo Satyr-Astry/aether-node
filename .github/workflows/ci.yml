@@ -19,10 +19,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install ruff
+          python -m pip install ruff mypy
 
       - name: Lint
         run: ruff check aether
+
+      - name: Type check
+        run: mypy aether --ignore-missing-imports
 
       - name: Run test suites
         shell: pwsh

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 desktop = ["pywebview>=5.3"]
+dev = ["ruff>=0.6", "mypy>=1.11"]
 
 [project.scripts]
 aether-node = "run:main"
