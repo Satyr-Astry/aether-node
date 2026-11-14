@@ -224,7 +224,6 @@ docker compose up
 **本机没有安装 Docker，镜像未实际构建过**，Dockerfile 是照标准写的。
 
 ### 打包成可发布目录
-
 ```powershell
 pwsh -File build.ps1
 ```
@@ -241,9 +240,11 @@ PyInstaller 的静态分析看不到这条路径，第一次构建出来的 exe 
 同理 uvicorn 自己的动态导入（`loops.auto`、`protocols.http.auto`、`lifespan.on`）
 也要手工列进 hiddenimports。
 
-**没做的**：Inno Setup 安装程序、代码签名、自动更新检查。没有签名证书的话安装包会被
-SmartScreen 警告，这属于分发层面的问题，不影响程序功能。也**没有在干净机器上验证过
-「装完能不能用」**——本机能跑通只证明打包流程正确，不证明目标机器不缺运行库。
+安装程序脚本已提供：installer.iss（Inno Setup 6）。先用 uild.ps1 生成
+dist/AetherNode/，再用 ISCC.exe installer.iss 编译。**本机没有 ISCC，脚本未经编译验证**。
+卸载时会保留 data/（模型、账本、身份）——删掉 identity.json 等于让用户永久失去节点身份。
+
+**仍未做**：代码签名、自动替换式更新（只做检查与告知）。
 
 ### 探针与指标
 
