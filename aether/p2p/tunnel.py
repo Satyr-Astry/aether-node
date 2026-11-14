@@ -57,12 +57,16 @@ class TunnelManager:
         self.stats = {
             "forwarded_in": 0, "requests_out": 0, "served": 0, "errors": 0,
             "overloaded": 0, "bytes_sent": 0, "bytes_recv": 0, "byte_mismatch": 0,
+            "duplicate_forward": 0,
         }
         self.last_error = ""
         self._sem: asyncio.Semaphore | None = None
         self._declared_bytes: dict[str, int] = {}
         self._denied: dict[str, int] = {}
         self._denied_reason: dict[str, str] = {}
+        # 同一 req_id 只处理一次：调用方会把请求广播给所有 relay，
+        # 若两个 relay 都认识本节点，同一个请求会被转发两遍——重复烧算力。
+        self._handled: dict[str, float] = {}
 
     def _semaphore(self) -> asyncio.Semaphore:
         """目标端并发闸门。满就快速失败，让调用方换节点或重试，
@@ -110,6 +114,19 @@ class TunnelManager:
         _, req_id, from_node, method, path, body = msg[:6]
         # relay 在 FWD 第 7 位带上业务请求 id；缺失时退回隧道消息 id
         biz_id = str(msg[6]) if len(msg) > 6 and msg[6] else req_id
+
+        # 去重：多个 relay 都可能转发同一请求，重复执行纯属浪费算力
+        now = time.time()
+        cutoff = now - 300
+        for key, seen_at in list(self._handled.items()):
+            if seen_at < cutoff:
+                self._handled.pop(key, None)
+        if req_id in self._handled:
+            self.stats["duplicate_forward"] += 1
+            bus.publish("tunnel.duplicate", {"req_id": req_id[:12], "from": from_node[:12]})
+            return
+        self._handled[req_id] = now
+
         self.stats["forwarded_in"] += 1
 
         sem = self._semaphore()
