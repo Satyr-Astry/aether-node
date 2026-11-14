@@ -97,6 +97,9 @@ class Settings(BaseModel):
     auth_trust_local: bool = True     # 本地回环是否免鉴权（api_key 模式）
     auth_jwt_secret: str = ""         # HS256 共享密钥
     auth_jwt_audience: str = ""
+    # 对特定节点信任它的 api_key：共享模式下跨节点直连需要它，
+    # 否则只能走 relay 隧道（隧道靠节点签名认证，不需要共享密钥）。
+    peer_keys: dict[str, str] = Field(default_factory=dict)
 
     # ---- 自有外部 API（纳入统一路由与计量）----
     # 每项形如：

@@ -132,7 +132,12 @@ class Router:
                         ctx=int(model.get("ctx") or 0),
                         note=f"{reach} / 广告龄 {age:.0f}s{suffix}",
                         price=price,
-                        extra=extra,
+                        # 目标若要求鉴权，只有预先交换过 key 的节点才能直连；
+                        # 没配 key 时会拿到 401，调用方应改用隧道
+                        extra={
+                            **extra,
+                            "api_key": (self.settings.peer_keys or {}).get(peer["node_id"], ""),
+                        },
                     ))
                 elif reach == "relay-only":
                     # 无直达端点：走应用层 relay 隧道，流量过 relay 所以扣分
