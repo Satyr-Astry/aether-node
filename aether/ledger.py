@@ -19,69 +19,79 @@ from pathlib import Path
 
 from aether.config import get_settings
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS requests (
-    id          TEXT PRIMARY KEY,
-    req_id      TEXT NOT NULL,
-    ts          REAL NOT NULL,
-    role        TEXT NOT NULL,
-    self_node   TEXT NOT NULL,
-    peer_node   TEXT,
-    model       TEXT NOT NULL,
-    in_tok      INTEGER NOT NULL DEFAULT 0,
-    out_tok     INTEGER NOT NULL DEFAULT 0,
-    price_in    REAL NOT NULL DEFAULT 0,
-    price_out   REAL NOT NULL DEFAULT 0,
-    amount      REAL NOT NULL DEFAULT 0,
-    source      TEXT NOT NULL,
-    estimated   INTEGER NOT NULL DEFAULT 0,
-    receipt     TEXT,
-    batch_id    TEXT,
-    status      TEXT NOT NULL DEFAULT 'ok'
-);
-CREATE INDEX IF NOT EXISTS idx_requests_req   ON requests(req_id);
-CREATE INDEX IF NOT EXISTS idx_requests_ts    ON requests(ts);
-CREATE INDEX IF NOT EXISTS idx_requests_batch ON requests(batch_id);
-CREATE INDEX IF NOT EXISTS idx_requests_role  ON requests(role);
+SCHEMA_VERSION = 3
 
-CREATE TABLE IF NOT EXISTS batches (
-    id          TEXT PRIMARY KEY,
-    ts          REAL NOT NULL,
-    from_ts     REAL NOT NULL,
-    to_ts       REAL NOT NULL,
-    count       INTEGER NOT NULL,
-    total_in    INTEGER NOT NULL,
-    total_out   INTEGER NOT NULL,
-    amount      REAL NOT NULL,
-    merkle_root TEXT NOT NULL,
-    path        TEXT
-);
+# 迁移按顺序增量应用。之前是用一段 CREATE TABLE IF NOT EXISTS 一次建全，
+# 那样能加新表，但改不了已有表的列——真要做字段演进就需要版本号。
+MIGRATIONS: list[tuple[int, str]] = [
+    (1, """
+    CREATE TABLE IF NOT EXISTS requests (
+        id          TEXT PRIMARY KEY,
+        req_id      TEXT NOT NULL,
+        ts          REAL NOT NULL,
+        role        TEXT NOT NULL,
+        self_node   TEXT NOT NULL,
+        peer_node   TEXT,
+        model       TEXT NOT NULL,
+        in_tok      INTEGER NOT NULL DEFAULT 0,
+        out_tok     INTEGER NOT NULL DEFAULT 0,
+        price_in    REAL NOT NULL DEFAULT 0,
+        price_out   REAL NOT NULL DEFAULT 0,
+        amount      REAL NOT NULL DEFAULT 0,
+        source      TEXT NOT NULL,
+        estimated   INTEGER NOT NULL DEFAULT 0,
+        receipt     TEXT,
+        batch_id    TEXT,
+        status      TEXT NOT NULL DEFAULT 'ok'
+    );
+    CREATE INDEX IF NOT EXISTS idx_requests_req   ON requests(req_id);
+    CREATE INDEX IF NOT EXISTS idx_requests_ts    ON requests(ts);
+    CREATE INDEX IF NOT EXISTS idx_requests_batch ON requests(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_requests_role  ON requests(role);
 
-CREATE TABLE IF NOT EXISTS peer_credit (
-    node_id     TEXT PRIMARY KEY,
-    receivable  REAL NOT NULL DEFAULT 0,
-    payable     REAL NOT NULL DEFAULT 0,
-    updated_at  REAL NOT NULL
-);
+    CREATE TABLE IF NOT EXISTS batches (
+        id          TEXT PRIMARY KEY,
+        ts          REAL NOT NULL,
+        from_ts     REAL NOT NULL,
+        to_ts       REAL NOT NULL,
+        count       INTEGER NOT NULL,
+        total_in    INTEGER NOT NULL,
+        total_out   INTEGER NOT NULL,
+        amount      REAL NOT NULL,
+        merkle_root TEXT NOT NULL,
+        path        TEXT
+    );
 
-CREATE TABLE IF NOT EXISTS audits (
-    id          TEXT PRIMARY KEY,
-    req_id      TEXT NOT NULL,
-    ts          REAL NOT NULL,
-    model       TEXT NOT NULL,
-    target_node TEXT NOT NULL,
-    verifier    TEXT,
-    original_in INTEGER NOT NULL DEFAULT 0,
-    original_out INTEGER NOT NULL DEFAULT 0,
-    verified_in INTEGER NOT NULL DEFAULT 0,
-    verified_out INTEGER NOT NULL DEFAULT 0,
-    similarity  REAL NOT NULL DEFAULT 0,
-    verdict     TEXT NOT NULL,
-    detail      TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_audits_ts ON audits(ts);
-CREATE INDEX IF NOT EXISTS idx_audits_target ON audits(target_node);
-"""
+    CREATE TABLE IF NOT EXISTS peer_credit (
+        node_id     TEXT PRIMARY KEY,
+        receivable  REAL NOT NULL DEFAULT 0,
+        payable     REAL NOT NULL DEFAULT 0,
+        updated_at  REAL NOT NULL
+    );
+    """),
+    (2, """
+    CREATE TABLE IF NOT EXISTS audits (
+        id          TEXT PRIMARY KEY,
+        req_id      TEXT NOT NULL,
+        ts          REAL NOT NULL,
+        model       TEXT NOT NULL,
+        target_node TEXT NOT NULL,
+        verifier    TEXT,
+        original_in INTEGER NOT NULL DEFAULT 0,
+        original_out INTEGER NOT NULL DEFAULT 0,
+        verified_in INTEGER NOT NULL DEFAULT 0,
+        verified_out INTEGER NOT NULL DEFAULT 0,
+        similarity  REAL NOT NULL DEFAULT 0,
+        verdict     TEXT NOT NULL,
+        detail      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audits_ts ON audits(ts);
+    CREATE INDEX IF NOT EXISTS idx_audits_target ON audits(target_node);
+    """),
+    (3, """
+    ALTER TABLE requests ADD COLUMN relay_bytes INTEGER NOT NULL DEFAULT 0;
+    """),
+]
 
 
 def compute_amount(in_tok: int, out_tok: int, price_in: float, price_out: float) -> float:
@@ -96,9 +106,43 @@ class Ledger:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self.version = self._migrate()
+
+    def _migrate(self) -> int:
+        """按 MIGRATIONS 增量升级，返回最终版本号。
+
+        v1 是基础结构，每次启动都幂等执行——库文件万一被外部工具改坏或缺表，
+        这里能自愈。v2 起的增量迁移严格按版本号只跑一次。
+        """
         with self._lock:
-            self._conn.executescript(SCHEMA)
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"
+            )
+            row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
+            current = int(row["version"]) if row else 0
+            has_row = row is not None
+
+            base_version, base_ddl = MIGRATIONS[0]
+            self._conn.executescript(base_ddl)
+            if not has_row:
+                self._conn.execute(
+                    "INSERT INTO schema_version (version) VALUES (?)", (base_version,)
+                )
+                has_row = True
+                current = base_version
+            elif current < base_version:
+                self._conn.execute("UPDATE schema_version SET version = ?", (base_version,))
+                current = base_version
+
+            for version, ddl in MIGRATIONS[1:]:
+                if version <= current:
+                    continue
+                self._conn.executescript(ddl)
+                self._conn.execute("UPDATE schema_version SET version = ?", (version,))
+                current = version
+
             self._conn.commit()
+            return current
 
     @property
     def path(self) -> str:

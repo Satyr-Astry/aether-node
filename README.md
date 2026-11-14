@@ -146,8 +146,21 @@ docker compose up
 中继承载字节、隧道转发次数、被速率限制与重放防护拒绝的次数、审计各判定计数。
 手写文本格式，没引 `prometheus_client`——指标项有限，多一个依赖不划算。
 
-### 结构化日志
+### 数据库迁移
 
+账本用 SQLite，schema 靠版本号增量升级（当前 v3）：
+
+| 版本 | 内容 |
+|---|---|
+| v1 | 基础结构：requests / batches / peer_credit |
+| v2 | 审计表 audits 与索引 |
+| v3 | requests 增加 relay_bytes 列 |
+
+v1 每次启动都幂等执行——库文件被外部工具改坏或缺表时能自愈；v2 起严格按版本号只跑一次。
+老库升级、重复打开、残缺库自愈三条路径都有测试覆盖（	ests/test_migrate.py）。
+当前版本可在 GET /api/ledger/summary 的 schema_version 看到。
+
+### 结构化日志
 事件总线会把每个事件同时写进 `data/logs/events.jsonl`，一行一条：
 
 ```json

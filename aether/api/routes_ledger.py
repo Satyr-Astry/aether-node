@@ -19,6 +19,7 @@ async def summary() -> dict:
         "summary": state.ledger.summary(),
         "credit": state.ledger.credit(),
         "db": state.ledger.path,
+        "schema_version": state.ledger.version,
     }
 
 
