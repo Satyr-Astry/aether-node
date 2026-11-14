@@ -312,6 +312,9 @@ class TunnelManager:
                     break
         finally:
             self._pending.pop(req_id, None)
+            # 声明字节也要清：请求超时或中途失败时不会走到 done 分支，
+            # 不在这里 pop 就会长期残留，成为慢速内存泄漏
+            self._declared_bytes.pop(req_id, None)
 
     async def request(
         self, target: str, method: str, path: str, body: str,

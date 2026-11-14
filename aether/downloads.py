@@ -48,10 +48,23 @@ class DownloadTask:
 
 
 class DownloadManager:
+    MAX_TASKS = 200  # 长期运行下任务列表必须有上界，否则只增不减
+
     def __init__(self, library: ModelLibrary) -> None:
         self.library = library
         self.tasks: dict[str, DownloadTask] = {}
         self._workers: dict[str, asyncio.Task] = {}
+
+    def _prune(self) -> None:
+        """超出上限时丢弃最老的已完成任务，保留进行中的。"""
+        if len(self.tasks) <= self.MAX_TASKS:
+            return
+        finished = sorted(
+            (t for t in self.tasks.values() if t.status in ("done", "failed", "cancelled")),
+            key=lambda t: t.started_at,
+        )
+        for task in finished[: len(self.tasks) - self.MAX_TASKS]:
+            self.tasks.pop(task.id, None)
 
     def _hub(self) -> HubClient:
         s = get_settings()
@@ -63,6 +76,7 @@ class DownloadManager:
                 return t  # 同一文件不重复排队
         task = DownloadTask(id=uuid.uuid4().hex[:12], repo=repo, file=file)
         self.tasks[task.id] = task
+        self._prune()
         self._workers[task.id] = asyncio.create_task(self._run(task), name=f"dl:{task.id}")
         return task
 

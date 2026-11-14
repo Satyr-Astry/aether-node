@@ -115,6 +115,23 @@ class MemoryRelay:
         for req_id, ts in list(self._seen.items()):
             if now - ts > window:
                 self._seen.pop(req_id, None)
+        # 速率窗口只对活跃节点有意义，长时间无请求的节点不必留着
+        for node, rec in list(self._rate.items()):
+            if now - rec.get("start", now) > 3600:
+                self._rate.pop(node, None)
+
+    def _trim_seen(self) -> None:
+        """防重放表的硬上限。
+
+        低频场景下 prune 可能长期不触发（它只在收到请求时跑），
+        这里给出确定的上界，避免无界增长。
+        """
+        limit = 5000
+        if len(self._seen) <= limit:
+            return
+        ordered = sorted(self._seen.items(), key=lambda kv: kv[1])
+        for req_id, _ in ordered[: len(self._seen) - limit]:
+            self._seen.pop(req_id, None)
 
     def _check_rate(self, node: str) -> str | None:
         """每节点每分钟的请求配额。返回拒绝原因，通过则返回 None。"""
@@ -195,6 +212,7 @@ class MemoryRelay:
             await self._send(ws, ["AETHER_REQ_DENIED", req_id, limited])
             return
         self._seen[req_id] = time.time()
+        self._trim_seen()
 
         target = str(msg[2])
         target_ws = self._by_node.get(target)
