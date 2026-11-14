@@ -730,7 +730,15 @@ tests/
 复现脚本：`tests/test_secp256k1.py`、`tests/test_p2p_ad.py`、`tests/test_evm.py`、
 `tests/test_payout.py`、`tests/e2e_verify.ps1`、`tests/e2e_load.ps1`、`tests/e2e_route.ps1`、
 `tests/e2e_tunnel.ps1`、`tests/e2e_ledger.ps1`、`tests/e2e_ledger_cross.ps1`、
-`tests/e2e_audit.ps1`、`tests/e2e_emission.ps1`
+`tests/e2e_audit.ps1`、`tests/e2e_emission.ps1`、`tests/e2e_external.ps1`、
+`tests/e2e_fault.ps1`、`tests/e2e_lan.ps1`、`tests/e2e_reconnect.ps1`
+
+**隧道重复转发去重**
+
+调用方把 `AETHER_REQ` 广播给所有 relay，若两个 relay 都认识目标节点，同一请求会被转发两遍。
+目标端现在按 `req_id` 去重：重复的计入 `duplicate_forward` 但不执行、不回复——否则会白白
+重复烧算力。记录保留 5 分钟并定期清理，不会无界增长。`tests/test_dedup.py` 11 项覆盖
+去重、误判（不同 req_id 不应被当重复）与过期清理。
 
 ## 尚未实现
 
