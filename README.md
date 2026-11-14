@@ -353,6 +353,10 @@ HTTP 状态一并报出来，便于区分是网络不可达还是服务报错。
 后是构建时按数组位置配对、验证时按字典序配对，两套规则导致同一片叶子的证明时真时假。
 现在构建与验证共用 `_pair()`，1/2/3/5/7/9 片叶子都验证通过。
 
+**交易类型**：默认出 legacy（EIP-155），传 `tx_type: 2` 出 EIP-1559。后者结构是
+`0x02 || rlp([chainId, nonce, maxPriorityFee, maxFee, gasLimit, to, value, data, accessList, yParity, r, s])`，
+签名哈希用前九个字段。实测同一条 calldata 两种格式都能签出，解码往返一致、恢复地址正确。
+
 **使用流程**：
 
 ```powershell
