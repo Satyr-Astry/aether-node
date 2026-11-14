@@ -57,6 +57,9 @@ def _guard_protected(request) -> JSONResponse | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     state = get_state()
+    settings = get_settings()
+    # 事件总线同时落 JSONL，作为结构化日志
+    bus.attach_log(settings.logs_path / "events.jsonl")
     bus.publish("app.start", {"version": __version__, "node_id": state.identity.pubkey})
     await state.p2p.start()
     try:
@@ -92,6 +95,7 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     app.include_router(routes_system.router)
+    app.include_router(routes_system.ops_router)
     app.include_router(routes_models.router)
     app.include_router(routes_p2p.router)
     app.include_router(routes_openai.router)

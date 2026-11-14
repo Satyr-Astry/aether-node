@@ -96,6 +96,61 @@ POST /api/providers {"action":"add","name":"my-api","endpoint":"https://api.open
 不排队是刻意的：排队会让所有请求一起变慢再一起超时，快速失败能把压力交还给调用方，
 它会去换节点或重试。
 
+## 部署与运维
+
+### Docker
+
+```powershell
+docker build -t aether-node .
+docker run -p 8737:8737 -v ${PWD}/data:/data aether-node
+# 或起两个节点看它互相发现
+docker compose up
+```
+
+容器里 `AETHER_SHARE=1` 会强制开启共享并自动生成 `api_key`——从 `docker logs` 里取。
+**本机没有安装 Docker，镜像未实际构建过**，Dockerfile 是照标准写的。
+
+### 探针与指标
+
+| 端点 | 用途 |
+|---|---|
+| `GET /healthz` | 存活探针，进程能响应即 200 |
+| `GET /readyz` | 就绪探针，依赖不可用时返回 503 |
+| `GET /metrics` | Prometheus 文本格式，17 项指标 |
+
+`/readyz` 会把 `relay`、`model_loaded` 一起报出来但不作为必需项——relay 连不上或模型没加载
+不该让进程被摘除，编排层可以据此决定是否接新流量。必需项只有账本可用。
+
+指标覆盖：运行时就绪、relay 连接数、peers、本地模型数、两个方向的 token 与金额、
+中继承载字节、隧道转发次数、被速率限制与重放防护拒绝的次数、审计各判定计数。
+手写文本格式，没引 `prometheus_client`——指标项有限，多一个依赖不划算。
+
+### 结构化日志
+
+事件总线会把每个事件同时写进 `data/logs/events.jsonl`，一行一条：
+
+```json
+{"seq": 2, "kind": "p2p.started", "ts": 1794670931.87, "payload": {"relays": ["ws://127.0.0.1:18995/relay"], "node_id": "79d9e743..."}}
+```
+
+事件本来就带 `kind / ts / payload`，天然是可查询记录，不需要另造日志格式。写失败会自动停用，
+不会拖累主流程。
+
+### 仓库
+
+已完成 `git init` 与首次提交，71 个文件、`.git` 约 205KB。`data/`、`.venv/`、`*.db` 与
+所有测试临时目录都在 `.gitignore` 里。
+
+**推送需要你自己做**——我没有你的远端地址与凭证：
+
+```powershell
+git remote add origin <你的仓库地址>
+git push -u origin main
+```
+
+CI 在 `.github/workflows/ci.yml`：Windows runner 上跑 ruff、六套测试（逐个执行，因为它们是
+靠退出码报告的独立脚本，不走 pytest 收集）、以及前端 JS 与 Python 语法检查。
+
 ## 界面
 
 四个视图：

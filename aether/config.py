@@ -176,6 +176,9 @@ def load_settings() -> Settings:
     if data.get("api_host") == "0.0.0.0" and not data.get("share_enabled"):
         data["share_enabled"] = True
         data["api_host"] = "127.0.0.1"
+    # 容器等环境可以用环境变量强制开启共享（Dockerfile 里设 AETHER_SHARE=1）
+    if str(os.environ.get("AETHER_SHARE", "")).strip().lower() in ("1", "true", "yes", "on"):
+        data["share_enabled"] = True
     _settings = Settings(home=home, **{k: v for k, v in data.items() if k in Settings.model_fields})
     _ensure_dirs(_settings)
     if _settings.share_enabled and not _settings.api_key:

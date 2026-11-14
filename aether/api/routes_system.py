@@ -7,7 +7,7 @@ import json
 import time
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from aether import APP_NAME, __version__
 from aether.api.state import get_state
@@ -18,6 +18,8 @@ from aether.llama_server import runtime
 from aether.p2p.relay_server import relay as memory_relay
 
 router = APIRouter(prefix="/api", tags=["system"])
+# 探针与指标按惯例挂在根路径，不套 /api 前缀
+ops_router = APIRouter(tags=["ops"])
 
 
 @router.get("/health")
@@ -183,3 +185,91 @@ async def manage_providers(payload: dict) -> dict:
     save_settings(s.model_copy(update={"external_providers": items}))
     bus.publish("settings.updated", {"keys": ["external_providers"]})
     return {"ok": True, "count": len(items)}
+
+# ---------------- 运维接口：健康检查与指标 ----------------
+
+@ops_router.get("/healthz")
+async def healthz() -> dict:
+    """存活探针：进程能响应就返回 200。"""
+    return {"ok": True, "ts": time.time()}
+
+
+@ops_router.get("/readyz")
+async def readyz() -> JSONResponse:
+    """就绪探针：依赖真的可用才算 ready。
+
+    relay 连不上、模型没加载都不影响进程存活，但此时不该接新流量，
+    所以这里分开报告，由编排层决定是否摘除。
+    """
+    state = get_state()
+    p2p = state.p2p
+    rt = runtime.status()
+    checks = {
+        "library": len(state.library.all()) >= 0,
+        "relay": p2p.client.connected_count > 0,
+        "model_loaded": rt.get("state") == "ready",
+        "ledger": state.ledger is not None,
+    }
+    required = ["ledger"]
+    ok = all(checks[k] for k in required)
+    return JSONResponse(
+        {"ready": ok, "checks": checks, "state": rt.get("state")},
+        status_code=200 if ok else 503,
+    )
+
+
+@ops_router.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    """Prometheus 文本格式。刻意不引 prometheus_client——指标项有限，
+    手写文本比多一个依赖划算。"""
+    state = get_state()
+    rt = runtime.status()
+    summary = state.ledger.summary()
+    stats = memory_relay.stats()
+    routing = state.p2p.router
+    audit = state.ledger.audit_stats()
+
+    lines: list[str] = []
+
+    def emit(name: str, help_text: str, mtype: str, samples: list[tuple[str, float, dict | None]]):
+        lines.append(f"# HELP {name} {help_text}")
+        lines.append(f"# TYPE {name} {mtype}")
+        for label_str, value, labels in samples:
+            lstr = ""
+            if labels:
+                inner = ",".join(f'{k}="{v}"' for k, v in labels.items())
+                lstr = "{" + inner + "}"
+            lines.append(f"{label_str if label_str else name}{lstr} {value}")
+
+    emit("aether_runtime_ready", "模型是否已加载可服务", "gauge",
+         [("aether_runtime_ready", 1 if rt.get("state") == "ready" else 0, None)])
+    emit("aether_relay_connected", "已连接的 relay 数", "gauge",
+         [("aether_relay_connected", state.p2p.client.connected_count, None)])
+    emit("aether_peers", "发现的网络节点数", "gauge",
+         [("aether_peers", len(state.p2p.peers.peers()), None)])
+    emit("aether_models_local", "本地模型数", "gauge",
+         [("aether_models_local", len(state.library.all()), None)])
+
+    for role in ("consume", "serve"):
+        block = summary.get(role) or {}
+        emit(f"aether_tokens_{role}_total", "已计量的 token 数", "counter",
+             [(f"aether_tokens_{role}_total", block.get("in_tok", 0) + block.get("out_tok", 0), None)])
+        emit(f"aether_amount_{role}", "已计量的金额（USD）", "gauge",
+             [(f"aether_amount_{role}", block.get("amount", 0.0), None)])
+
+    emit("aether_relay_bytes_total", "中继承载的总字节", "counter",
+         [("aether_relay_bytes_total", stats.get("relay_total_bytes", 0), None)])
+    emit("aether_relay_clients", "relay 当前连接数", "gauge",
+         [("aether_relay_clients", stats.get("clients", 0), None)])
+    emit("aether_tunnel_relayed_total", "隧道转发次数", "counter",
+         [("aether_tunnel_relayed_total", stats.get("tunnel_relayed", 0), None)])
+    emit("aether_rate_limited_total", "被速率限制拒绝的次数", "counter",
+         [("aether_rate_limited_total", stats.get("rate_limited", 0), None)])
+    emit("aether_replay_blocked_total", "被重放防护拒绝的次数", "counter",
+         [("aether_replay_blocked_total", stats.get("replay_blocked", 0), None)])
+
+    for verdict in ("pass", "suspect", "skipped", "error"):
+        emit("aether_audit_total", "抽样复算结果计数", "counter",
+             [("aether_audit_total", audit.get(verdict, 0), {"verdict": verdict})])
+
+    return PlainTextResponse("\n".join(lines) + "\n")

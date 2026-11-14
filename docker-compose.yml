@@ -1,0 +1,26 @@
+services:
+  node-a:
+    build: .
+    container_name: aether-a
+    ports:
+      - "8737:8737"
+    volumes:
+      - ./data-a:/data
+    environment:
+      AETHER_SHARE: "1"
+    restart: unless-stopped
+
+  # 第二个节点：连到 a 的 relay 形成汇聚拓扑。
+  # 两节点都需要模型时，把 models 目录挂载共享可避免重复下载。
+  node-b:
+    build: .
+    container_name: aether-b
+    ports:
+      - "8738:8737"
+    volumes:
+      - ./data-b:/data
+    environment:
+      AETHER_SHARE: "1"
+    depends_on:
+      - node-a
+    restart: unless-stopped
