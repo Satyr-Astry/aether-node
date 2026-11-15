@@ -15,7 +15,7 @@ __pycache__/
 .smoke*/
 .*-test/
 .verify/
-.audit-*/
+.audit-*/\n.tunnel-b/\n.rc-*/\n.lan-*/\n.soak-test/\n.fault-test/\n
 .ledger-*/
 .emis-*/
 .payout-*/
