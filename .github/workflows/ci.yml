@@ -29,6 +29,10 @@ jobs:
 
       - name: Run test suites
         shell: pwsh
+        env:
+          # runner 默认 stdout 编码是 cp1252，测试输出含中文会抛 UnicodeEncodeError
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           # 测试脚本是独立可执行程序（靠退出码报告结果），不走 pytest 收集
           $failed = @()
