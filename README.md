@@ -1,6 +1,62 @@
 # AetherNode
 
+[![ci](https://github.com/Satyr-Astry/aether-node/actions/workflows/ci.yml/badge.svg)](https://github.com/Satyr-Astry/aether-node/actions/workflows/ci.yml)
+
 把本地 AI 服务打包成接口、广播到 P2P 网络、并对请求做路由的桌面程序。
+
+```powershell
+git clone https://github.com/Satyr-Astry/aether-node
+cd aether-node
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe run.py
+```
+
+首次打开会出现三步引导：装推理运行时 → 下一个模型 → 决定是否对外共享。默认只监听
+`127.0.0.1`，不对外暴露。
+
+## 一句话说明它解决什么
+
+一台机器的 GPU 闲着，另一台想跑模型但没有显卡；或者你有自己的 OpenAI API，又想让本地
+模型和网络里其他节点走同一个入口。AetherNode 把这三类来源——**本机模型、自有 API、网络
+内其他节点**——收敛到同一个 `/v1`，按价格与延迟自动选路，并记录每一次调用的 token 消耗。
+
+## 已实现
+
+| 能力 | 状态 |
+|---|---|
+| HF 模型检索 / 断点续传下载 / llama.cpp 部署 | 已验证 |
+| OpenAI 兼容 `/v1`（含 SSE 流式、token 计量） | 已验证 |
+| Nostr 广播签名服务广告 + 内置 relay | 已验证 |
+| 中继隧道（无公网端点也能被调用） | 已验证 |
+| 跨节点路由 + 失败 fallback | 已验证 |
+| 按 token 计量的账本、收据、对账、Merkle 结算批次 | 已验证 |
+| 抽样复算审计、贡献度换算、代币发放计划 | 已验证 |
+| 自实现 Keccak/RLP/ECDSA/EIP-155/ABI，可构造链上交易 | 已验证 |
+| 默认安全的鉴权、限流、防重放、并发闸门 | 已验证 |
+| PyInstaller 打包产物（能跑完整推理链路） | 已验证 |
+
+## 明确未实现
+
+这些不是「以后再说」，是我给不出结论的部分：
+
+- **跨机器真实网络验证**：所有双节点测试都在同一台机器上（含非回环 IP），NAT、真实 TLS、
+  防火墙行为没有实测。
+- **真实链交易**：链上部分是离线向量与自洽性验证，没有一笔交易真正广播过。
+- **小时级长稳**：只跑过 5 分钟（600 请求，内存 +2.1%）。
+- **Docker 镜像**：Dockerfile 与 compose 在仓库里，本机无 Docker，**未构建过**。
+- **安装程序**：`installer.iss` 未编译（本机无 ISCC）。
+- **干净机器安装**：打包产物在本机能跑，目标机器缺不缺运行库不知道。
+
+`data/` 里的模型与运行时合计 1.3GB，不进仓库，首次运行需下载。
+
+## 目录
+
+```
+aether/            主程序（配置、身份、推理、P2P、账本、EVM、GUI）
+contracts/         Solidity 合约（结算锚定、ERC-20、发放器）
+tests/             15 套单测 + 8 个端到端脚本
+```
 
 ## 它做什么
 
